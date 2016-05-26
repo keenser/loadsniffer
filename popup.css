@@ -1,0 +1,38 @@
+html {
+  min-height: 120px;
+  max-height: 500px;
+  min-width: 640px;
+  max-width: 640px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background-color: #F5F5F5;
+}
+
+table {
+  font-size: 14px;
+}
+
+#contant {
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+
+h1 {
+	font-size: 14px;
+	color: #888888;
+	font-weight: normal;
+	font-family: Helvetica, Arial, sans-serif;
+}
+
+div.content-row {
+	padding-right: 80px;
+	padding-bottom: 10px;
+}
