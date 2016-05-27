@@ -36,7 +36,7 @@ var queryHeader = function(headers, headerName) {
 
 var CommonListener = function(top, title, details) {
         var type = queryHeader(details.responseHeaders, 'content-type');
-        console.log("onResponseStarted listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
+        console.log("CommonListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
         urllib[details.tabId].push({
             url: details.url,
             title: title,
@@ -44,9 +44,14 @@ var CommonListener = function(top, title, details) {
         return true;
     };
 
+var RuTubeListener = function(top, title, details) {
+        var type = queryHeader(details.responseHeaders, 'content-type');
+        console.log("Rutube listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
+    };
+
 var TrackListener = function(top, title, details) {
         var type = queryHeader(details.responseHeaders, 'content-type');
-        console.log("onResponseStarted listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
+        console.log("TrackListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
         url = details.url.substring(0, details.url.lastIndexOf('/'));
         for (var i = 0; i < urllib[details.tabId].length; i++) {
             if (urllib[details.tabId][i].url === url) {
@@ -66,12 +71,19 @@ var f4mListener = function(top, title, details) {
         console.log("f4mListener:", details.tabId, details.method, title, details.url, details.type, type, details.statusCode);
         get(details.url, function(xml) {
             console.log('xml', xml);
+            try {
+                baseurl = xml.getElementsByTagName('baseURL')[0].textContent.trim();
+            }
+            catch(e) {
+                baseurl = "";
+            }
             media = xml.getElementsByTagName('media');
             bitrate = []
             for (var i = 0; i < media.length; i++) {
-                console.log(details.tabId, media[i].getAttribute("url"), media[i].getAttribute("bitrate"));
+                url = media[i].getAttribute("url") || baseurl + media[i].getAttribute("href")
+                console.log(details.tabId, url, media[i].getAttribute("bitrate"));
                 bitrate.push({
-                    url: media[i].getAttribute("url"),
+                    url: url,
                     bitrate: media[i].getAttribute("bitrate")
                 })
             }
@@ -120,10 +132,15 @@ var onHeadersReceived = function(callback, urlfilter) {
 
 onHeadersReceived(CommonListener, {
     urls: ["*://*/*.mp4*",
+    "*://*/*.flv*",
     //"*://*/*video*",
     "*://*.youtube.com/embed/*", "*://*.youtube.com/watch*",
     //   "<all_urls>"
     ],
+});
+
+onHeadersReceived(RuTubeListener, {
+    urls: ["*://rutube.ru/*", ],
 });
 
 onHeadersReceived(f4mListener, {
@@ -135,8 +152,9 @@ onHeadersReceived(TrackListener, {
 });
 
 chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+    //console.log('tabs.onUpdated', changeInfo, tab);
     if (changeInfo.status == 'loading' && typeof changeInfo.url !== 'undefined') {
-        console.log('reload tabid:', tabId, changeInfo);
+    //    console.log('reload tabid:', tabId, changeInfo);
         urllib[tabId] = [];
     }
 });
