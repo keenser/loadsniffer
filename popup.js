@@ -1,22 +1,20 @@
-var addSingleLink = function(tr, index, linkSource) {
-        var td = document.createElement("td");
-        td.setAttribute('rule', 'url');
+var addSingleLink = function(line, linkSource) {
+        var span = document.createElement("span");
         var a = document.createElement("a");
         a.textContent = linkSource.title || linkSource.url;
         a.setAttribute("href", linkSource.url);
-        td.appendChild(a);
-        tr.appendChild(td);
+        span.appendChild(a);
+        line.appendChild(span);
         console.log(linkSource);
         if (typeof linkSource.bitrate !== 'undefined') {
             for (var i = 0; i < linkSource.bitrate.length; i++) {
-                var td = document.createElement("td");
-                td.setAttribute('rule', 'bitrate');
+                var span = document.createElement("span");
                 var a = document.createElement("a");
                 a.textContent = linkSource.bitrate[i].bitrate;
                 a.setAttribute("href", linkSource.bitrate[i].url);
                 a.setAttribute('download', linkSource.bitrate[i].url);
-                td.appendChild(a);
-                tr.appendChild(td);
+                span.appendChild(a);
+                line.appendChild(span);
             }
         }
     };
@@ -24,14 +22,14 @@ var addSingleLink = function(tr, index, linkSource) {
 var addLinks = function(videoLinks) {
         var container = document.getElementById("content");
         console.log('container', container);
-        var table = document.createElement("table");
+        var general = document.createElement("div");
+        general.setAttribute('class', 'content')
         for (var i = 0; i < videoLinks.length; ++i) {
-            var tr = document.createElement("tr");
-            tr.setAttribute('index', i);
-            addSingleLink(tr, i, videoLinks[i]);
-            table.appendChild(tr);
+            var line = document.createElement("div");
+            addSingleLink(line, videoLinks[i]);
+            general.appendChild(line);
         }
-        container.replaceChild(table, container.childNodes[0]);
+        container.replaceChild(general, container.childNodes[0]);
     };
 
 

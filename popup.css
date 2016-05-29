@@ -1,6 +1,6 @@
 html {
   min-height: 120px;
-  max-height: 500px;
+  max-height: 300px;
   min-width: 640px;
   max-width: 640px;
   border: 0;
@@ -20,7 +20,7 @@ table {
   font-size: 14px;
 }
 
-#contant {
+#content {
   overflow-x: hidden;
   overflow-y: scroll;
 }
@@ -32,7 +32,32 @@ h1 {
 	font-family: Helvetica, Arial, sans-serif;
 }
 
-div.content-row {
-	padding-right: 80px;
-	padding-bottom: 10px;
+.content div{
+  margin: 1px;
+  display: flex;
+}
+
+.content div:hover{
+  background: #E1E7ED;
+}
+
+.content div span{
+  background: #D5DDE5;
+  padding: 6px;
+  padding-left: 10px;
+  padding-right: 10px;
+  margin: 1px;
+  float: right;
+  transition: 0.5s;
+}
+
+.content div span:hover{
+  background: #BBC7D3;
+}
+
+.content div span:first-child{
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  background: transparent;
 }
