@@ -1,50 +1,57 @@
-var addSingleLink = function(line, linkSource) {
+var tabid = null;
+
+var addSingleLink = function(line, title, url) {
         var span = document.createElement("span");
-        var a = document.createElement("a");
-        a.textContent = linkSource.title || linkSource.url;
-        a.setAttribute("href", linkSource.url);
-        span.appendChild(a);
+        span.textContent = title;
+        span.addEventListener('click', function(e){
+          chrome.extension.sendMessage(
+            { action: "data", data: url})
+        });
         line.appendChild(span);
+    };
+
+var addLine = function(container, linkSource) {
         console.log(linkSource);
+        var line = document.createElement("div");
+        addSingleLink(line, linkSource.src+ ': ' + linkSource.title || linkSource.url, linkSource.url);
         if (typeof linkSource.bitrate !== 'undefined') {
             for (var i = 0; i < linkSource.bitrate.length; i++) {
-                var span = document.createElement("span");
-                var a = document.createElement("a");
-                a.textContent = linkSource.bitrate[i].bitrate;
-                a.setAttribute("href", linkSource.bitrate[i].url);
-                a.setAttribute('download', linkSource.bitrate[i].url);
-                span.appendChild(a);
-                line.appendChild(span);
+                addSingleLink(line, linkSource.bitrate[i].bitrate || i+1, linkSource.bitrate[i].url);
             }
         }
+        //container.appendChild(line);
+        container.insertBefore(line, container.firstChild);
     };
 
 var addLinks = function(videoLinks) {
         var container = document.getElementById("content");
+        container.style.cursor= 'pointer';
         console.log('container', container);
-        var general = document.createElement("div");
-        general.setAttribute('class', 'content')
         for (var i = 0; i < videoLinks.length; ++i) {
-            var line = document.createElement("div");
-            addSingleLink(line, videoLinks[i]);
-            general.appendChild(line);
+            addLine(container, videoLinks[i]);
         }
-        container.replaceChild(general, container.childNodes[0]);
     };
 
-
 chrome.tabs.getSelected(null, function(tab) {
+    tabid = tab.id;
     chrome.extension.sendMessage({
         action: "tabid",
-        tabid: tab.id
+        tabid: tabid
     }, function(urllib) {
         addLinks(urllib);
     });
 });
 
 chrome.extension.onMessage.addListener(function(request, sender) {
-    if (request.action == 'urllib') {
-        addLinks(request.urllib);
+    if (request.action == 'addline') {
+        var container = document.getElementById("content");
+        addLine(container, request.addline);
+    }
+    else if (request.action == 'cleantab') {
+        if (request.cleantab == tabid) {
+            var container = document.getElementById("content");
+            container.innerText = '';
+        }
     }
 });
 
