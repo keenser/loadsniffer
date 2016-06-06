@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
+#
+# Media Renderer control server
 
 from twisted.internet import reactor, threads
 from twisted.web import server

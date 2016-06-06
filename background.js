@@ -1,5 +1,47 @@
 var urllib = [];
-var tabid = null;
+var tabid = null ;
+
+function MRCServer(handler) {
+    var mrc = {}
+    doclose = false;
+    websocket = null ;
+    
+    mrc.url = null ;
+    mrc.disconnect = function() {
+        doclose = true;
+        console.log("disconnect", doclose);
+        websocket && websocket.close && websocket.close();
+    }
+    ;
+    
+    mrc.connect = function() {
+        console.log("connect", websocket);
+        doclose = false;
+        websocket = new WebSocket(mrc.url);
+        websocket.binaryType = "arraybuffer";
+        websocket.onclose = function(evt) {
+            if (!doclose) {
+                console.log("onclose", doclose);
+                mrc.connect();
+            }
+        }
+        ;
+        websocket.onmessage = function(data) {
+            var o = JSON.parse(data);
+            handler(o);
+        }
+    }
+    ;
+    return mrc;
+}
+;
+
+var mrc = new MRCServer(
+function(obj) {
+    console.log("onMessage", obj)
+}
+);
+mrc.url = "ws://192.168.1.19:8881/ws";
 
 chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
     if (request.action == 'tabid') {
@@ -22,12 +64,12 @@ var get = function(url, callback) {
     xmlRequest.onload = function() {
         callback(xmlRequest);
     }
-//    xmlRequest.onreadystatechange = function() {
-//        if (xmlRequest.readyState == 4) {
-//            callback(xmlRequest.responseXML);
-//        }
-//    }
-//    ;
+    //    xmlRequest.onreadystatechange = function() {
+    //        if (xmlRequest.readyState == 4) {
+    //            callback(xmlRequest.responseXML);
+    //        }
+    //    }
+    //    ;
 }
 ;
 
@@ -68,41 +110,41 @@ var RuTubeListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("Rutube listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
     get(details.url, function(data) {
-        var url = null;
+        var url = null ;
         try {
             url = data.responseXML.getElementsByTagName('m3u8')[0].textContent.trim();
-        }
-        catch(e) {
+        } 
+        catch (e) {
             try {
-                url = JSON.parse(data.responseText)['video_balancer']['m3u8'];            
-            }
-            catch(e) {
+                url = JSON.parse(data.responseText)['video_balancer']['m3u8'];
+            } 
+            catch (e) {
                 return
             }
         }
-
-        get(url,function(data){
+        
+        get(url, function(data) {
             bitrate = []
             var lines = data.responseText.split('\n');
             for (var i = 0; i < lines.length; i++) {
                 var result = lines[i].match(/http:\/\/.*\.m3u8.*_(\d+)$/i)
                 if (result) {
-                bitrate.push({
-                    url: result[0],
-                    bitrate: result[1]
-                });
-                    
+                    bitrate.push({
+                        url: result[0],
+                        bitrate: result[1]
+                    });
+                
                 }
             }
-        var data = {
-            src: 'rutube',
-            url: url,
-            title: title,
-            bitrate: bitrate
-        };
-        urllib[details.tabId].push(data);
-        callback(data);
-
+            var data = {
+                src: 'rutube',
+                url: url,
+                title: title,
+                bitrate: bitrate
+            };
+            urllib[details.tabId].push(data);
+            callback(data);
+        
         });
     });
 }
@@ -131,14 +173,14 @@ var f4mListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("f4mListener:", details.tabId, details.method, title, details.url, details.type, type, details.statusCode);
     get(details.url, function(data) {
-        xml = data.responseXML || null;
+        xml = data.responseXML || null ;
         if (!xml) {
             return;
         }
         console.log('xml', xml);
         try {
             baseurl = xml.getElementsByTagName('baseURL')[0].textContent.trim();
-        }
+        } 
         catch (e) {
             baseurl = "";
         }
@@ -196,7 +238,7 @@ var onHeadersReceived = function(callback, urlfilter) {
 onHeadersReceived(CommonListener, {
     urls: [
     "*://*/*.mp4*", 
-    "*://*/*.flv*",
+    "*://*/*.flv*", 
     //"*://*/*video*",
     "*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", 
     ],
@@ -216,31 +258,34 @@ onHeadersReceived(HDSListener, {
 
 chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
     console.log('tabs.onUpdated', changeInfo, tab);
-    if (changeInfo.status == 'loading' 
+    if (changeInfo.status == 'loading'
     //&& typeof changeInfo.url === 'undefined'
     //&& typeof changeInfo.url !== 'undefined'
     ) {
         console.log('reload tabid:', tabId, changeInfo, tab);
-//        urllib[tabId] = [];
-//        chrome.extension.sendMessage({
-//            action: "cleantab",
-//            cleantab: tabId
-//        });    
+        //        urllib[tabId] = [];
+        //        chrome.extension.sendMessage({
+        //            action: "cleantab",
+        //            cleantab: tabId
+        //        });    
     }
 });
 
-function context_onclick( info, tab ) {
+function context_onclick(info, tab) {
     console.log('context_onclick', info, tab)
+    mrc.url = "ws://192.168.1.19:8880/ws";
 }
 
 chrome.contextMenus.create({
     title: "send to torrent2http",
     contexts: ['link', 'video'],
     onclick: context_onclick
-  });
+});
+
 
 var onStartupOrOnInstalledListener = function() {
     console.log("onStartupOrOnInstalledListener");
+    mrc.connect();
 }
 ;
 
