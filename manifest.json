@@ -9,8 +9,9 @@
     },
     "permissions": [
         "tabs",
-	"webRequest",
-	"*://*/*"
+        "contextMenus",
+        "webRequest",
+        "*://*/*"
     ],
     "browser_action": {
         "default_popup": "popup.html"

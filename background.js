@@ -196,7 +196,7 @@ var onHeadersReceived = function(callback, urlfilter) {
 onHeadersReceived(CommonListener, {
     urls: [
     "*://*/*.mp4*", 
-//    "*://*/*.flv*", 
+    "*://*/*.flv*",
     //"*://*/*video*",
     "*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", 
     ],
@@ -228,6 +228,16 @@ chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
 //        });    
     }
 });
+
+function context_onclick( info, tab ) {
+    console.log('context_onclick', info, tab)
+}
+
+chrome.contextMenus.create({
+    title: "send to torrent2http",
+    contexts: ['link', 'video'],
+    onclick: context_onclick
+  });
 
 var onStartupOrOnInstalledListener = function() {
     console.log("onStartupOrOnInstalledListener");

@@ -3,6 +3,7 @@ var tabid = null;
 var addSingleLink = function(line, title, url) {
         var span = document.createElement("span");
         span.textContent = title;
+        span.title = url;
         span.addEventListener('click', function(e){
           chrome.extension.sendMessage(
             { action: "data", data: url})
