@@ -1,39 +1,45 @@
-var tabid = null;
+var tabid = null ;
 
-var addSingleLink = function(line, title, url) {
-        var span = document.createElement("span");
-        span.textContent = title;
-        span.title = url;
-        span.addEventListener('click', function(e){
-          chrome.extension.sendMessage(
-            { action: "data", data: url})
-        });
-        line.appendChild(span);
-    };
+var addSingleLink = function(line, textcontent, url, title) {
+    var span = document.createElement("span");
+    span.textContent = textcontent;
+    span.title = url;
+    span.addEventListener('click', function(e) {
+        chrome.extension.sendMessage(
+        {
+            action: "play",
+            play: {
+                title: title,
+                url: url
+            }
+        })
+    });
+    line.appendChild(span);
+}
 
 var addLine = function(container, linkSource) {
-        console.log(linkSource);
-        var line = document.createElement("div");
-        addSingleLink(line, linkSource.src+ ': ' + linkSource.title || linkSource.url, linkSource.url);
-        if (typeof linkSource.bitrate !== 'undefined') {
-            for (var i = 0; i < linkSource.bitrate.length; i++) {
-                addSingleLink(line, linkSource.bitrate[i].bitrate || i+1, linkSource.bitrate[i].url);
-            }
+    console.log(linkSource);
+    var line = document.createElement("div");
+    addSingleLink(line, linkSource.src + ': ' + linkSource.title || linkSource.url, linkSource.url, linkSource.title || linkSource.url);
+    if (typeof linkSource.bitrate !== 'undefined') {
+        for (var i = 0; i < linkSource.bitrate.length; i++) {
+            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url);
         }
-        //container.appendChild(line);
-        container.insertBefore(line, container.firstChild);
-    };
+    }
+    //container.appendChild(line);
+    container.insertBefore(line, container.firstChild);
+}
 
 var addLinks = function(videoLinks) {
-        var container = document.getElementById("content");
-        container.style.cursor= 'pointer';
-        console.log('container', container);
-        for (var i = 0; i < videoLinks.length; ++i) {
-            addLine(container, videoLinks[i]);
-        }
-    };
+    var container = document.getElementById("content");
+    container.style.cursor = 'pointer';
+    console.log('container', container);
+    for (var i = 0; i < videoLinks.length; ++i) {
+        addLine(container, videoLinks[i]);
+    }
+}
 
-chrome.tabs.getSelected(null, function(tab) {
+chrome.tabs.getSelected(null , function(tab) {
     tabid = tab.id;
     chrome.extension.sendMessage({
         action: "tabid",
@@ -56,7 +62,7 @@ chrome.extension.onMessage.addListener(function(request, sender) {
     }
     else if (request.action === 'upnp') {
         var container = document.getElementById("upnp");
-        container.textContent = request.upnp.state;
+        container.textContent = request.upnp.state + ": " + request.upnp.item[0].title;
     }
 });
 

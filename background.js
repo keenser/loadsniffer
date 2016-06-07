@@ -1,18 +1,18 @@
 var urllib = [];
 var tabid = null ;
+var mrcurl = "ws://192.168.1.19:8880/"
 
 function MRCServer(url, handler) {
     var mrc = {}
-    doclose = false;
-    websocket = null ;
+    var doclose = false;
+    var websocket = null ;
     
     mrc.url = url;
     mrc.disconnect = function() {
         doclose = true;
-        console.log("disconnect", doclose);
+        console.log("disconnect", websocket);
         websocket && websocket.close && websocket.close();
     }
-    ;
     
     mrc.connect = function() {
         doclose = false;
@@ -23,18 +23,26 @@ function MRCServer(url, handler) {
                 mrc.connect();
             }
         }
-        ;
-        websocket.onmessage = function(data) {
-            handler(JSON.parse(data.data));
+        if (handler) {
+            websocket.onmessage = function(data) {
+                console.log("websocket", websocket);
+                handler(JSON.parse(data.data));
+            }
         }
-        ;
     }
-    ;
+
+    mrc.send = function(data) {
+        console.log('send', websocket);
+        mrc.connect();
+        websocket.onopen = function() {
+            websocket.send(JSON.stringify(data));
+            mrc.disconnect();
+        }
+    }
     return mrc;
 }
-;
 
-var mrc = new MRCServer("ws://192.168.1.19:8880/ws",
+var mrcstatus = new MRCServer(mrcurl + 'status',
 function(obj) {
     console.log(obj);
     chrome.extension.sendMessage({
@@ -44,6 +52,8 @@ function(obj) {
 }
 );
 
+var mrcplay = new MRCServer(mrcurl + 'play');
+
 chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
     if (request.action == 'tabid') {
         console.log('request tabid info for', request);
@@ -52,8 +62,9 @@ chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
         f_callback(urllib[request.tabid] || []);
     } else if (request.action == 'url') {
         console.log('request url', request.url);
-    } else if (request.action == 'data') {
-        console.log('data', request.data);
+    } else if (request.action == 'play') {
+        console.log('play', request.play);
+        mrcplay.send(request.play);
     }
 });
 
@@ -84,19 +95,21 @@ var queryHeader = function(headers, headerName) {
     }
     return '';
 }
-;
 
 
 var LogListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("LogListener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
 }
-;
 
 var CommonListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("CommonListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
-    console.log("CommonListener details:", details);
+    for (var i = 0; i < urllib[details.tabId].length; i++) {
+        if (urllib[details.tabId][i].url === details.url) {
+            return;
+        }
+    }
     var data = {
         src: 'common',
         url: details.url,
@@ -105,7 +118,6 @@ var CommonListener = function(top, title, details, callback) {
     urllib[details.tabId].push(data);
     callback(data);
 }
-;
 
 var RuTubeListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
@@ -149,7 +161,6 @@ var RuTubeListener = function(top, title, details, callback) {
         });
     });
 }
-;
 
 var HDSListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
@@ -168,7 +179,6 @@ var HDSListener = function(top, title, details, callback) {
     urllib[details.tabId].push(data);
     callback(data);
 }
-;
 
 var f4mListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
@@ -205,7 +215,6 @@ var f4mListener = function(top, title, details, callback) {
         callback(data);
     });
 }
-;
 
 var onHeadersReceived = function(callback, urlfilter) {
     var removed = {};
@@ -226,13 +235,11 @@ var onHeadersReceived = function(callback, urlfilter) {
         }
         return null ;
     }
-    ;
     chrome.tabs.onRemoved.addListener(function(tabId) {
         removed[tabId] = true
     });
     chrome.webRequest.onResponseStarted.addListener(onHeadersReceived, urlfilter, ["responseHeaders"]);
 }
-;
 
 //onHeadersReceived(LogListener, {urls: ["<all_urls>"]});
 
@@ -285,9 +292,8 @@ chrome.contextMenus.create({
 
 var onStartupOrOnInstalledListener = function() {
     console.log("onStartupOrOnInstalledListener");
-    mrc.connect();
+    mrcstatus.connect();
 }
-;
 
 chrome.runtime.onStartup.addListener(function() {
     onStartupOrOnInstalledListener();
