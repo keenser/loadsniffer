@@ -7,8 +7,8 @@
 from twisted.internet import reactor, threads
 from twisted.web import server
 from twisted.web.resource import Resource
-from autobahn.websocket import WebSocketServerFactory, WebSocketServerProtocol
-from autobahn.resource import WebSocketResource
+from autobahn.twisted.websocket import WebSocketServerFactory, WebSocketServerProtocol
+from autobahn.twisted.resource import WebSocketResource
 from coherence.base import Coherence
 from coherence.upnp.devices.control_point import ControlPoint
 from coherence.upnp.core import DIDLLite
@@ -20,7 +20,7 @@ def printall(*args, **kwargs):
 class MediaDevice(object):
     def __init__(self, device):
         self.media = device
-        self.status = {'state': None, 'url': []}
+        self.status = {'state': None, 'item': []}
 
     def __repr__(self):
         return "{} {} {}".format(device, status)
@@ -96,10 +96,10 @@ class UPnPctrl(object):
             if variable.value != None and len(variable.value)>0:
                 try:
                     elt = DIDLLite.DIDLElement.fromString(variable.value)
-                    self.mediadevices[usn].status['url'] = []
+                    self.mediadevices[usn].status['item'] = []
                     for item in elt.getItems():
-                        print "now playing:", item.id
-                        self.mediadevices[usn].status['url'].append(item.id)
+                        print "now playing:", item.title, item.id
+                        self.mediadevices[usn].status['item'].append({'url':item.id, 'title':item.title})
                 except SyntaxError:
                     return
         elif variable.name == 'TransportState':
@@ -108,13 +108,13 @@ class UPnPctrl(object):
         self.trigger_callbacks()
 
     def trigger_callbacks(self):
-        print "callbacks", self.registered_callbacks
-        for callback in self.registered_callbacks.values():
-            try:
-                if callback['status'] != self.device.status:
-                    callback['callback'](self.device.status)
-            except Exception as e:
-                print "state_variable_change callback exception", e
+        if self.device:
+            for callback in self.registered_callbacks.values():
+                try:
+                    if callback['status'] != self.device.status:
+                        callback['callback'](self.device.status)
+                except Exception as e:
+                    print "trigger_callbacks exception", e
 
     def refresh(self):
         self.coherence.msearch.double_discover()
@@ -164,74 +164,42 @@ class Info(Resource):
             return server.NOT_DONE_YET
         return "no 'url' parameter pecified"
 
-class Play(Resource, object):
-    def __init__(self, upnp):
-        super(Play, self).__init__()
-        self.upnp = upnp
-        
-    def render_GET(self, request):
-        url = request.args.get('url', [None])[0]
-        if url:
-            print "push to play url:", url
-            self.upnp.play(url)
-            return "push"
-        return "no 'url' parameter pecified"
+class Play(WebSocketServerProtocol):
+    def onMessage(self, payload, isBinary):
+        data = json.loads(payload)
+        print "Payload", payload, "data", data
+        if data.get('url', None):
+            print "push to play url:", data.get('url')
+            upnp.play(data.get('url'), data.get('title', 'Video'))
 
-class Status(Play, object):
-    def __init__(self, upnp):
-        super(Play, self).__init__()
-        self.upnp = upnp
+class Status(WebSocketServerProtocol):
+    def onOpen(self):
+        def jsonsend(message):
+            self.sendMessage(json.dumps(message))
 
-    def render_GET(self, request):
-        #status change using long poll
-        status = {
-            'state': request.args.get('state', [None])[0],
-            'url': request.args.get('url', [])
-        }
-        if status == self.upnp.device.status:
-            def callback(variable):
-                request.write(json.dumps(variable))
-                request.finish()
-            #add callback:
-            self.upnp.on_status_change(status, callback)
-            #and remove on close connection:
-            d = request.notifyFinish()
-            d.addCallback(lambda _: self.upnp.on_status_change(None, callback))
-            d.addErrback(lambda _: self.upnp.on_status_change(None, callback))
-            return server.NOT_DONE_YET
-        else:
-            return json.dumps(self.upnp.device.status)
+        self._jsonsend = jsonsend
+        print "Status client connected", id(self._jsonsend)
+        upnp.on_status_change(True, self._jsonsend)
 
-def WSProtocol(upnp):
-    class _WSProtocol(WebSocketServerProtocol):
-        def onOpen(self):
-            def jsonsend(message):
-                self.sendMessage(json.dumps(message))
-
-            self._jsonsend = jsonsend
-            print "some request connected", id(self._jsonsend)
-            upnp.on_status_change(True, self._jsonsend)
-
-        def onClose(self, wasClean, code, reason):
-            print "WebSocket connection closed", reason, id(self._jsonsend)
-            upnp.on_status_change(None, self._jsonsend)
-
-        def onMessage(self, payload, isBinary):
-            self.sendMessage("message received", payload, isBinary)
-
-    return _WSProtocol
+    def onClose(self, wasClean, code, reason):
+        print "Status client closed", reason , id(self._jsonsend)
+        upnp.on_status_change(None, self._jsonsend)
 
 upnp = UPnPctrl()
-root = Resource()
-root.putChild("info", Info())
-root.putChild("play", Play(upnp))
-root.putChild("status", Status(upnp))
-ws = WebSocketServerFactory(u"ws://0.0.0.0:8880")
-ws.protocol = WSProtocol(upnp)
-root.putChild(u"ws", WebSocketResource(ws))
 
-site = server.Site(root)
-reactor.listenTCP(8880, site)
-#reactor.callWhenRunning(start)
+def start():
+    root = Resource()
+    root.putChild("info", Info())
+    play = WebSocketServerFactory()
+    play.protocol = Play
+    root.putChild("play", WebSocketResource(play))
+    status = WebSocketServerFactory()
+    status.protocol = Status
+    root.putChild("status", WebSocketResource(status))
+
+    site = server.Site(root)
+    reactor.listenTCP(8880, site)
+
+reactor.callWhenRunning(start)
 reactor.run()
 
