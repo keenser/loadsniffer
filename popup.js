@@ -44,15 +44,19 @@ chrome.tabs.getSelected(null, function(tab) {
 });
 
 chrome.extension.onMessage.addListener(function(request, sender) {
-    if (request.action == 'addline') {
+    if (request.action === 'addline') {
         var container = document.getElementById("content");
         addLine(container, request.addline);
     }
-    else if (request.action == 'cleantab') {
+    else if (request.action === 'cleantab') {
         if (request.cleantab == tabid) {
             var container = document.getElementById("content");
             container.innerText = '';
         }
+    }
+    else if (request.action === 'upnp') {
+        var container = document.getElementById("upnp");
+        container.textContent = request.upnp.state;
     }
 });
 
