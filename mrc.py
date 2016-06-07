@@ -86,6 +86,7 @@ class UPnPctrl(object):
     def on_status_change(self, status, callback):
         if status:
             self.registered_callbacks[id(callback)] = {'status': status, 'callback': callback}
+            self.trigger_callbacks()
         else:
             self.registered_callbacks.pop(id(callback), None)
             
@@ -203,12 +204,12 @@ class Status(Play, object):
 
 def WSProtocol(upnp):
     class _WSProtocol(WebSocketServerProtocol):
-        def onConnect(self, request):
+        def onOpen(self):
             def jsonsend(message):
                 self.sendMessage(json.dumps(message))
 
             self._jsonsend = jsonsend
-            print "some request connected", request, id(self._jsonsend)
+            print "some request connected", id(self._jsonsend)
             upnp.on_status_change(True, self._jsonsend)
 
         def onClose(self, wasClean, code, reason):
