@@ -1,12 +1,12 @@
 var urllib = [];
 var tabid = null ;
 
-function MRCServer(handler) {
+function MRCServer(url, handler) {
     var mrc = {}
     doclose = false;
     websocket = null ;
     
-    mrc.url = null ;
+    mrc.url = url;
     mrc.disconnect = function() {
         doclose = true;
         console.log("disconnect", doclose);
@@ -15,33 +15,34 @@ function MRCServer(handler) {
     ;
     
     mrc.connect = function() {
-        console.log("connect", websocket);
         doclose = false;
         websocket = new WebSocket(mrc.url);
         websocket.binaryType = "arraybuffer";
         websocket.onclose = function(evt) {
             if (!doclose) {
-                console.log("onclose", doclose);
                 mrc.connect();
             }
         }
         ;
         websocket.onmessage = function(data) {
-            var o = JSON.parse(data);
-            handler(o);
+            handler(JSON.parse(data.data));
         }
+        ;
     }
     ;
     return mrc;
 }
 ;
 
-var mrc = new MRCServer(
+var mrc = new MRCServer("ws://192.168.1.19:8880/ws",
 function(obj) {
-    console.log("onMessage", obj)
+    console.log(obj);
+    chrome.extension.sendMessage({
+        action: "upnp",
+        upnp: obj
+    });
 }
 );
-mrc.url = "ws://192.168.1.19:8881/ws";
 
 chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
     if (request.action == 'tabid') {
@@ -273,7 +274,6 @@ chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
 
 function context_onclick(info, tab) {
     console.log('context_onclick', info, tab)
-    mrc.url = "ws://192.168.1.19:8880/ws";
 }
 
 chrome.contextMenus.create({
