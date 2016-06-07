@@ -44,7 +44,7 @@ class UPnPctrl(object):
         print "media_renderer_removed", usn
         self.mediadevices.pop(usn, None)
         if self.device:
-            if self.device.get_usn() == usn:
+            if self.device.media.get_usn() == usn:
                 if len(self.mediadevices):
                     self.device = list(self.mediadevices.values())[0]
                 else:
@@ -107,6 +107,7 @@ class UPnPctrl(object):
         self.trigger_callbacks()
 
     def trigger_callbacks(self):
+        print "callbacks", self.registered_callbacks
         for callback in self.registered_callbacks.values():
             try:
                 if callback['status'] != self.device.status:
@@ -200,12 +201,24 @@ class Status(Play, object):
         else:
             return json.dumps(self.upnp.device.status)
 
-class WSProtocol(WebSocketServerProtocol):
-    def onConnect(self, request):
-        print("some request connected {}".format(request))
+def WSProtocol(upnp):
+    class _WSProtocol(WebSocketServerProtocol):
+        def onConnect(self, request):
+            def jsonsend(message):
+                self.sendMessage(json.dumps(message))
 
-    def onMessage(self, payload, isBinary):
-        self.sendMessage("message received")
+            self._jsonsend = jsonsend
+            print "some request connected", request, id(self._jsonsend)
+            upnp.on_status_change(True, self._jsonsend)
+
+        def onClose(self, wasClean, code, reason):
+            print "WebSocket connection closed", reason, id(self._jsonsend)
+            upnp.on_status_change(None, self._jsonsend)
+
+        def onMessage(self, payload, isBinary):
+            self.sendMessage("message received", payload, isBinary)
+
+    return _WSProtocol
 
 upnp = UPnPctrl()
 root = Resource()
@@ -213,7 +226,7 @@ root.putChild("info", Info())
 root.putChild("play", Play(upnp))
 root.putChild("status", Status(upnp))
 ws = WebSocketServerFactory(u"ws://0.0.0.0:8880")
-ws.protocol = WSProtocol
+ws.protocol = WSProtocol(upnp)
 root.putChild(u"ws", WebSocketResource(ws))
 
 site = server.Site(root)
