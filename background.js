@@ -247,6 +247,7 @@ onHeadersReceived(CommonListener, {
     urls: [
     "*://*/*.mp4*", 
     "*://*/*.flv*", 
+    "*://*/*.m3u8*",
     //"*://*/*video*",
     "*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", 
     ],
