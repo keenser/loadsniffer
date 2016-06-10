@@ -11,6 +11,7 @@
         "tabs",
         "contextMenus",
         "webRequest",
+        "cookies",
         "*://*/*"
     ],
     "browser_action": {

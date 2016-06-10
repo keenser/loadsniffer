@@ -30,7 +30,7 @@ function MRCServer(url, handler) {
             }
         }
     }
-
+    
     mrc.send = function(data) {
         console.log('send', websocket);
         mrc.connect();
@@ -76,14 +76,7 @@ var get = function(url, callback) {
     xmlRequest.onload = function() {
         callback(xmlRequest);
     }
-    //    xmlRequest.onreadystatechange = function() {
-    //        if (xmlRequest.readyState == 4) {
-    //            callback(xmlRequest.responseXML);
-    //        }
-    //    }
-    //    ;
 }
-;
 
 var queryHeader = function(headers, headerName) {
     if (headers && headers.length) {
@@ -146,7 +139,6 @@ var RuTubeListener = function(top, title, details, callback) {
                         url: result[0],
                         bitrate: result[1]
                     });
-                
                 }
             }
             var data = {
@@ -216,6 +208,68 @@ var f4mListener = function(top, title, details, callback) {
     });
 }
 
+var MailRuListener = function(top, title, details, callback) {
+    var type = queryHeader(details.responseHeaders, 'content-type');
+    console.log("MailRuListener:", details.tabId, details.method, title, details.url, details.type, type, details.statusCode);
+
+    if (type === 'video/mp4') {
+        chrome.cookies.get({
+            url: details.url,
+            name: 'video_key'
+        }, 
+        function(cookie) {
+            var data = {
+                src: 'mailru',
+                url: details.url,
+                title: title,
+                cookie: cookie
+            };
+            urllib[details.tabId].push(data);
+            callback(data);
+            return;
+        });
+    } 
+    else if (type === 'application/json') {
+        jsonurl = details.url;
+    }
+    else {
+        url = details.url;
+        url = url.replace('https://my.mail.ru/', '');
+        url = url.replace('/video/', '/');
+        url = url.replace('/embed/', '/');
+        url = url.replace('.html', '.json');
+        url = url.replace('?', '.json');
+        jsonurl = 'http://videoapi.my.mail.ru/videos/' + url;
+    }
+    get(jsonurl, function(data) {
+    var url = null ;
+    c = data.getAllResponseHeaders();
+    try {
+        data = JSON.parse(data.responseText);
+        url = data['meta']['url'];
+        title = data['meta']['title'];
+        bitrate = [];
+        for (var i = 0; i < data['videos'].length; i++) {
+            bitrate.push({
+                url: data['videos'][i]['url'],
+                bitrate: data['videos'][i]['key']
+            })
+        }
+        var data = {
+            src: 'mailru',
+            url: url,
+            title: title,
+            bitrate: bitrate
+        };
+        urllib[details.tabId].push(data);
+        callback(data);
+    } 
+    catch (e) {
+        return;
+    }
+    });
+}
+
 var onHeadersReceived = function(callback, urlfilter) {
     var removed = {};
     var onHeadersReceived = function(details) {
@@ -247,7 +301,7 @@ onHeadersReceived(CommonListener, {
     urls: [
     "*://*/*.mp4*", 
     "*://*/*.flv*", 
-    "*://*/*.m3u8*",
+    "*://*/*.m3u8*", 
     //"*://*/*video*",
     "*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", 
     ],
@@ -255,6 +309,13 @@ onHeadersReceived(CommonListener, {
 
 onHeadersReceived(RuTubeListener, {
     urls: ["*://*.rutube.ru/api/play/options/*", ],
+});
+
+onHeadersReceived(MailRuListener, {
+    urls: [
+    "*://*.my.mail.ru/*.mp4*", 
+    "*://*.mail.ru/*/video/*", 
+    ],
 });
 
 onHeadersReceived(f4mListener, {
@@ -266,17 +327,17 @@ onHeadersReceived(HDSListener, {
 });
 
 chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
-    console.log('tabs.onUpdated', changeInfo, tab);
+    //console.log('tabs.onUpdated', changeInfo, tab);
     if (changeInfo.status == 'loading'
     //&& typeof changeInfo.url === 'undefined'
     //&& typeof changeInfo.url !== 'undefined'
     ) {
-        console.log('reload tabid:', tabId, changeInfo, tab);
-        //        urllib[tabId] = [];
-        //        chrome.extension.sendMessage({
-        //            action: "cleantab",
-        //            cleantab: tabId
-        //        });    
+    //console.log('reload tabid:', tabId, changeInfo, tab);
+    //        urllib[tabId] = [];
+    //        chrome.extension.sendMessage({
+    //            action: "cleantab",
+    //            cleantab: tabId
+    //        });    
     }
 });
 
