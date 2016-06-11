@@ -7,19 +7,22 @@ import urlparse
 def printall(*args, **kwargs):
     print args, kwargs
 
+
 class ProxyRequest(proxy.ProxyRequest):
     def process(self):
         print "uri", self.uri
         url = self.args.get('url',[None])[0]
+        if not url:
+            return
         cookies = self.args.get('cookie')
         parsed = urlparse.urlparse(url)
 
-
-        protocol = parsed[0]
-        host = parsed[1]
+        protocol = parsed.scheme
+        host = parsed.netloc
         port = self.ports[protocol]
 
-        self.requestHeaders.setRawHeaders(b"Cookie", cookies)
+        if cookies:
+            self.requestHeaders.setRawHeaders(b"Cookie", cookies)
         self.requestHeaders.setRawHeaders(b"host", [host])
         if ':' in host:
             host, port = host.split(':')
@@ -37,11 +40,13 @@ class ProxyRequest(proxy.ProxyRequest):
                                s, self)
         self.reactor.connectTCP(host, port, clientFactory)
         d = self.notifyFinish()
-        d.addCallback(lambda _: clientFactory.abortConnection())
-        d.addErrback(lambda _: clientFactory.abortConnection())
+        d.addCallback(lambda _: clientFactory.doStop())
+        d.addErrback(lambda _: clientFactory.doStop())
+
 
 class Proxy(proxy.Proxy):
     requestFactory = ProxyRequest
+
 
 class ProxyFactory(http.HTTPFactory):
     protocol = Proxy
