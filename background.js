@@ -98,17 +98,11 @@ var LogListener = function(top, title, details, callback) {
 var CommonListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("CommonListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
-    for (var i = 0; i < urllib[details.tabId].length; i++) {
-        if (urllib[details.tabId][i].url === details.url) {
-            return;
-        }
-    }
     var data = {
         src: 'common',
         url: details.url,
         title: title,
     };
-    urllib[details.tabId].push(data);
     callback(data);
 }
 
@@ -147,7 +141,6 @@ var RuTubeListener = function(top, title, details, callback) {
                 title: title,
                 bitrate: bitrate
             };
-            urllib[details.tabId].push(data);
             callback(data);
         
         });
@@ -158,17 +151,11 @@ var HDSListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("TrackListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
     url = details.url.substring(0, details.url.lastIndexOf('/'));
-    for (var i = 0; i < urllib[details.tabId].length; i++) {
-        if (urllib[details.tabId][i].url === url) {
-            return;
-        }
-    }
     var data = {
         src: 'hds',
         url: url,
         title: title
     }
-    urllib[details.tabId].push(data);
     callback(data);
 }
 
@@ -203,7 +190,6 @@ var f4mListener = function(top, title, details, callback) {
             title: title,
             bitrate: bitrate
         };
-        urllib[details.tabId].push(data);
         callback(data);
     });
 }
@@ -211,7 +197,7 @@ var f4mListener = function(top, title, details, callback) {
 var MailRuListener = function(top, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("MailRuListener:", details.tabId, details.method, title, details.url, details.type, type, details.statusCode);
-
+    
     if (type === 'video/mp4') {
         chrome.cookies.get({
             url: details.url,
@@ -222,16 +208,15 @@ var MailRuListener = function(top, title, details, callback) {
                 src: 'mailru',
                 url: details.url,
                 title: title,
-                cookie: cookie
+                cookie: cookie.name + '=' + cookie.value
             };
-            urllib[details.tabId].push(data);
             callback(data);
             return;
         });
     } 
-    else if (type === 'application/json') {
+    else if (type.startsWith('application/json')) {
         jsonurl = details.url;
-    }
+    } 
     else {
         url = details.url;
         url = url.replace('https://my.mail.ru/', '');
@@ -242,30 +227,34 @@ var MailRuListener = function(top, title, details, callback) {
         jsonurl = 'http://videoapi.my.mail.ru/videos/' + url;
     }
     get(jsonurl, function(data) {
-        var url = null ;
-        c = data.getAllResponseHeaders();
         try {
-            data = JSON.parse(data.responseText);
-            url = data['meta']['url'];
-            title = data['meta']['title'];
-            bitrate = [];
-            for (var i = 0; i < data['videos'].length; i++) {
-                bitrate.push({
-                    url: data['videos'][i]['url'],
-                    bitrate: data['videos'][i]['key']
-                })
-            }
-            var data = {
-                src: 'mailru',
-                url: url,
-                title: title,
-                bitrate: bitrate
-            };
-            urllib[details.tabId].push(data);
-            callback(data);
+            var jsondata = JSON.parse(data.responseText);
+            chrome.cookies.get({
+                url: jsonurl,
+                name: 'video_key'
+            }, 
+            function(cookie) {
+                url = jsondata['meta']['url'];
+                title = jsondata['meta']['title'];
+                bitrate = [];
+                for (var i = 0; i < jsondata['videos'].length; i++) {
+                    bitrate.push({
+                        url: jsondata['videos'][i]['url'],
+                        bitrate: jsondata['videos'][i]['key'],
+                        cookie: cookie.name + '=' + cookie.value
+                    })
+                }
+                var data = {
+                    src: 'mailru',
+                    url: url,
+                    title: title,
+                    bitrate: bitrate
+                };
+                callback(data);
+            });
         } 
         catch (e) {
-            return;
+            console.log(e);
         }
     });
 }
@@ -278,6 +267,12 @@ var onHeadersReceived = function(callback, urlfilter) {
         if (id > -1 && !removed[id]) {
             chrome.tabs.get(id, function(tab) {
                 callback(tab.url, tab.title, details, function(data) {
+                    for (var i = 0; i < urllib[id].length; i++) {
+                        if (urllib[id][i].url === data.url) {
+                            return null ;
+                        }
+                    }
+                    urllib[id].push(data);
                     if (id == tabid) {
                         chrome.extension.sendMessage({
                             action: "addline",
@@ -315,6 +310,7 @@ onHeadersReceived(MailRuListener, {
     urls: [
     "*://*.my.mail.ru/*.mp4*", 
     "*://*.mail.ru/*/video/*", 
+    "*://videoapi.my.mail.ru/videos/*"
     ],
 });
 
