@@ -242,31 +242,31 @@ var MailRuListener = function(top, title, details, callback) {
         jsonurl = 'http://videoapi.my.mail.ru/videos/' + url;
     }
     get(jsonurl, function(data) {
-    var url = null ;
-    c = data.getAllResponseHeaders();
-    try {
-        data = JSON.parse(data.responseText);
-        url = data['meta']['url'];
-        title = data['meta']['title'];
-        bitrate = [];
-        for (var i = 0; i < data['videos'].length; i++) {
-            bitrate.push({
-                url: data['videos'][i]['url'],
-                bitrate: data['videos'][i]['key']
-            })
+        var url = null ;
+        c = data.getAllResponseHeaders();
+        try {
+            data = JSON.parse(data.responseText);
+            url = data['meta']['url'];
+            title = data['meta']['title'];
+            bitrate = [];
+            for (var i = 0; i < data['videos'].length; i++) {
+                bitrate.push({
+                    url: data['videos'][i]['url'],
+                    bitrate: data['videos'][i]['key']
+                })
+            }
+            var data = {
+                src: 'mailru',
+                url: url,
+                title: title,
+                bitrate: bitrate
+            };
+            urllib[details.tabId].push(data);
+            callback(data);
+        } 
+        catch (e) {
+            return;
         }
-        var data = {
-            src: 'mailru',
-            url: url,
-            title: title,
-            bitrate: bitrate
-        };
-        urllib[details.tabId].push(data);
-        callback(data);
-    } 
-    catch (e) {
-        return;
-    }
     });
 }
 
