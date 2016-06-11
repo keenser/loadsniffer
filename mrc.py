@@ -13,6 +13,7 @@ from coherence.base import Coherence
 from coherence.upnp.devices.control_point import ControlPoint
 from coherence.upnp.core import DIDLLite
 import json
+import cgi
 
 def printall(*args, **kwargs):
     print args, kwargs
@@ -71,7 +72,7 @@ class UPnPctrl(object):
         if self.device:
             mime = 'http-get:*:%s:*' % vtype
             res = DIDLLite.Resource(url, mime)
-            item = DIDLLite.VideoItem(1, 0, url)
+            item = DIDLLite.VideoItem(None, None, None)
             item.title = title
             item.res.append(res)
             didl = DIDLLite.DIDLElement()
@@ -79,7 +80,7 @@ class UPnPctrl(object):
             service = self.device.media.get_service_by_type('AVTransport')
             transport_action= service.get_action('SetAVTransportURI')
             play_action = service.get_action('Play')
-            d = transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString())
+            d = transport_action.call(InstanceID=0, CurrentURI='url', CurrentURIMetaData=didl.toString())
             d.addCallback(lambda x: play_action.call(InstanceID=0, Speed=1))
             d.addErrback(printall)
 
@@ -172,18 +173,32 @@ class Play(WebSocketServerProtocol):
             print "push to play url:", data.get('url')
             upnp.play(data.get('url'), data.get('title', 'Video'))
 
-class Status(WebSocketServerProtocol):
+class WS(WebSocketServerProtocol):
     def onOpen(self):
         def jsonsend(message):
-            self.sendMessage(json.dumps(message))
+            self.sendMessage(json.dumps({'action':'upnp', 'upnp':message}))
 
         self._jsonsend = jsonsend
-        print "Status client connected", id(self._jsonsend)
+        print "WS client connected", id(self._jsonsend)
         upnp.on_status_change(True, self._jsonsend)
 
     def onClose(self, wasClean, code, reason):
-        print "Status client closed", reason , id(self._jsonsend)
+        print "WS client closed", reason , id(self._jsonsend)
         upnp.on_status_change(None, self._jsonsend)
+
+    def onMessage(self, payload, isBinary):
+        jsondata = json.loads(payload)
+        print "onMessage payload", payload, "jsondata", jsondata
+        if jsondata.get('action', None) == 'play':
+            data = jsondata['play']
+            if data.get('url', None):
+                print "push to play url:", data.get('url')
+                print "cookie", data.get('cookie')
+                if data.get('cookie'):
+                    url = "http://192.168.1.19:8080/?url={}&cookie={}".format(cgi.escape(data.get('url')), data.get('cookie'))
+                else:
+                    url = data.get('url')
+                upnp.play(url, data.get('title', 'Video'))
 
 upnp = UPnPctrl()
 
@@ -193,9 +208,9 @@ def start():
     play = WebSocketServerFactory()
     play.protocol = Play
     root.putChild("play", WebSocketResource(play))
-    status = WebSocketServerFactory()
-    status.protocol = Status
-    root.putChild("status", WebSocketResource(status))
+    ws = WebSocketServerFactory()
+    ws.protocol = WS
+    root.putChild("ws", WebSocketResource(ws))
 
     site = server.Site(root)
     reactor.listenTCP(8880, site)
