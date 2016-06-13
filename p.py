@@ -51,7 +51,7 @@ class Proxy(proxy.Proxy):
 class ProxyFactory(http.HTTPFactory):
     protocol = Proxy
 
-portstr = "tcp:8080:interface=localhost" # serve on localhost:8080
+portstr = "tcp:8080:interface=0.0.0.0" # serve on localhost:8080
 
 if __name__ == '__main__': # $ python proxy_modify_request.py
     import sys
