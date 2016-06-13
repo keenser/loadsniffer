@@ -1,11 +1,13 @@
 var urllib = [];
-var tabid = null ;
-var mrcurl = "ws://192.168.1.19:8880/"
+var currenttabid = null ;
+var mrcurl = "ws://192.168.1.19:8880/ws"
 
 function MRCServer(url, handler) {
-    var mrc = {}
+    var mrc = {};
     var doclose = false;
     var websocket = null ;
+    var uid = 1;
+    var callback_pool = {};
     
     mrc.url = url;
     mrc.disconnect = function() {
@@ -18,53 +20,60 @@ function MRCServer(url, handler) {
         doclose = false;
         websocket = new WebSocket(mrc.url);
         websocket.binaryType = "arraybuffer";
+        websocket.onopen = function() {
+            console.log("onopen websocket", websocket);
+        }
         websocket.onclose = function(evt) {
             if (!doclose) {
                 mrc.connect();
             }
         }
-        if (handler) {
-            websocket.onmessage = function(data) {
-                console.log("websocket", websocket);
-                handler(JSON.parse(data.data));
+        websocket.onmessage = function(data) {
+            console.log("onmessage websocket", data);
+            var jsondata = JSON.parse(data.data);
+            if (jsondata['_uid'] !== undefined) {
+                callback_pool[jsondata['_uid']](jsondata['data']);
+                delete callback_pool[jsondata['_uid']];
+            } 
+            else if (handler) {
+                handler(jsondata);
             }
         }
     }
     
-    mrc.send = function(data) {
-        console.log('send', websocket);
-        mrc.connect();
-        websocket.onopen = function() {
+    mrc.sendMessage = function(data, callback) {
+        console.log('send', data);
+        if (websocket.readyState) {
+            var senddata = data;
+            if (callback !== undefined) {
+                var currentid = uid++;
+                senddata['_uid'] = currentid;
+                callback_pool[currentid] = callback;
+            }
             websocket.send(JSON.stringify(data));
-            mrc.disconnect();
         }
     }
     return mrc;
 }
 
-var mrcstatus = new MRCServer(mrcurl + 'status',
+var mrc = new MRCServer(mrcurl,
 function(obj) {
-    console.log(obj);
-    chrome.extension.sendMessage({
-        action: "upnp",
-        upnp: obj
-    });
+    console.log("ws obj", obj);
+    chrome.extension.sendMessage(obj);
 }
 );
-
-var mrcplay = new MRCServer(mrcurl + 'play');
 
 chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
     if (request.action == 'tabid') {
         console.log('request tabid info for', request);
-        tabid = request.tabid;
+        currenttabid = request.tabid;
         console.log('return tabId', urllib[request.tabid] || [])
         f_callback(urllib[request.tabid] || []);
     } else if (request.action == 'url') {
         console.log('request url', request.url);
     } else if (request.action == 'play') {
         console.log('play', request.play);
-        mrcplay.send(request.play);
+        mrc.sendMessage(request);
     }
 });
 
@@ -89,41 +98,53 @@ var queryHeader = function(headers, headerName) {
     return '';
 }
 
-
-var LogListener = function(top, title, details, callback) {
+var LogListener = function(tabid, url, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
-    console.log("LogListener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
+    console.log("LogListener:", tabid, title, url, details.type, type);
 }
 
-var CommonListener = function(top, title, details, callback) {
-    var type = queryHeader(details.responseHeaders, 'content-type');
-    console.log("CommonListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
+var CommonListener = function(tabid, url, title, details, callback) {
+    console.log("CommonListener:", tabid, title, url, details.type);
+    url = url.replace(/Seg(\d)+-Frag(\d)+/, "");
     var data = {
         src: 'common',
-        url: details.url,
+        url: url,
         title: title,
     };
-    callback(data);
+    callback(tabid, data);
 }
 
-var RuTubeListener = function(top, title, details, callback) {
-    var type = queryHeader(details.responseHeaders, 'content-type');
-    console.log("Rutube listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
-    get(details.url, function(data) {
-        var url = null ;
+var ResolveListener = function(tabid, url, title, details, callback) {
+    console.log("ResolveListener:", tabid, title, url, details);
+    mrc.sendMessage({
+        action: 'info',
+        info: {
+            url: url
+        }
+    }, function(data) {
+        console.log("Resolve", data);
+        if (data['error'] === undefined) {
+            callback(tabid, data);
+        }
+    });
+}
+
+var RuTubeListener = function(tabid, url, title, details, callback) {
+    console.log("RutubeListener:", tabid, title, url, details.type);
+    get(url, function(data) {
+        var m3u8;
         try {
-            url = data.responseXML.getElementsByTagName('m3u8')[0].textContent.trim();
+            m3u8 = data.responseXML.getElementsByTagName('m3u8')[0].textContent.trim();
         } 
         catch (e) {
             try {
-                url = JSON.parse(data.responseText)['video_balancer']['m3u8'];
+                m3u8 = JSON.parse(data.responseText)['video_balancer']['m3u8'];
             } 
             catch (e) {
                 return
             }
         }
-        
-        get(url, function(data) {
+        get(m3u8, function(data) {
             bitrate = []
             var lines = data.responseText.split('\n');
             for (var i = 0; i < lines.length; i++) {
@@ -136,33 +157,31 @@ var RuTubeListener = function(top, title, details, callback) {
                 }
             }
             var data = {
-                src: 'rutube',
-                url: url,
+                src: '_rutube',
+                url: m3u8,
                 title: title,
                 bitrate: bitrate
             };
-            callback(data);
+            callback(tabid, data);
         
         });
     });
 }
 
-var HDSListener = function(top, title, details, callback) {
-    var type = queryHeader(details.responseHeaders, 'content-type');
-    console.log("TrackListener listener:", details.tabId, title, details.method, details.url, details.type, type, details.statusCode);
-    url = details.url.substring(0, details.url.lastIndexOf('/'));
+var HDSListener = function(tabid, url, title, details, callback) {
+    console.log("TrackListener:", tabid, title, url, details.type);
+    url = url.substring(0, url.lastIndexOf('/'));
     var data = {
         src: 'hds',
         url: url,
         title: title
     }
-    callback(data);
+    callback(tabid, data);
 }
 
-var f4mListener = function(top, title, details, callback) {
-    var type = queryHeader(details.responseHeaders, 'content-type');
-    console.log("f4mListener:", details.tabId, details.method, title, details.url, details.type, type, details.statusCode);
-    get(details.url, function(data) {
+var f4mListener = function(tabid, url, title, details, callback) {
+    console.log("f4mListener:", tabid, title, url, details.type);
+    get(url, function(data) {
         xml = data.responseXML || null ;
         if (!xml) {
             return;
@@ -177,54 +196,53 @@ var f4mListener = function(top, title, details, callback) {
         media = xml.getElementsByTagName('media');
         bitrate = []
         for (var i = 0; i < media.length; i++) {
-            url = media[i].getAttribute("url") || baseurl + media[i].getAttribute("href")
-            console.log(details.tabId, url, media[i].getAttribute("bitrate"));
+            bitrateurl = media[i].getAttribute("url") || baseurl + media[i].getAttribute("href")
             bitrate.push({
-                url: url,
+                url: bitrateurl,
                 bitrate: media[i].getAttribute("bitrate")
             })
         }
         var data = {
             src: 'f4m',
-            url: details.url,
+            url: url,
             title: title,
             bitrate: bitrate
         };
-        callback(data);
+        callback(tabid, data);
     });
 }
 
-var MailRuListener = function(top, title, details, callback) {
+var MailRuListener = function(tabid, url, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
-    console.log("MailRuListener:", details.tabId, details.method, title, details.url, details.type, type, details.statusCode);
+    console.log("MailRuListener:", tabid, title, url, details.type, type);
     
     if (type === 'video/mp4') {
         chrome.cookies.get({
-            url: details.url,
+            url: url,
             name: 'video_key'
         }, 
         function(cookie) {
             var data = {
                 src: 'mailru',
-                url: details.url,
+                url: url,
                 title: title,
                 cookie: cookie.name + '=' + cookie.value
             };
-            callback(data);
+            callback(tabid, data);
             return;
         });
     } 
     else if (type.startsWith('application/json')) {
-        jsonurl = details.url;
+        jsonurl = url;
     } 
     else {
-        url = details.url;
-        url = url.replace('https://my.mail.ru/', '');
-        url = url.replace('/video/', '/');
-        url = url.replace('/embed/', '/');
-        url = url.replace('.html', '.json');
-        url = url.replace('?', '.json');
-        jsonurl = 'http://videoapi.my.mail.ru/videos/' + url;
+        jsonurl = url;
+        jsonurl = jsonurl.replace('https://my.mail.ru/', '');
+        jsonurl = jsonurl.replace('/video/', '/');
+        jsonurl = jsonurl.replace('/embed/', '/');
+        jsonurl = jsonurl.replace('.html', '.json');
+        jsonurl = jsonurl.replace('?', '.json');
+        jsonurl = 'http://videoapi.my.mail.ru/videos/' + jsonurl;
     }
     get(jsonurl, function(data) {
         try {
@@ -234,7 +252,7 @@ var MailRuListener = function(top, title, details, callback) {
                 name: 'video_key'
             }, 
             function(cookie) {
-                url = jsondata['meta']['url'];
+                metaurl = jsondata['meta']['url'];
                 title = jsondata['meta']['title'];
                 bitrate = [];
                 for (var i = 0; i < jsondata['videos'].length; i++) {
@@ -246,11 +264,11 @@ var MailRuListener = function(top, title, details, callback) {
                 }
                 var data = {
                     src: 'mailru',
-                    url: url,
+                    url: metaurl,
                     title: title,
                     bitrate: bitrate
                 };
-                callback(data);
+                callback(tabid, data);
             });
         } 
         catch (e) {
@@ -259,27 +277,34 @@ var MailRuListener = function(top, title, details, callback) {
     });
 }
 
+var UpdateTabLib = function(id, data) {
+    urllib[id] = urllib[id] || []
+    for (var i = 0; i < urllib[id].length; i++) {
+        if (urllib[id][i].url === data.url) {
+            return null ;
+        }
+    }
+    urllib[id].push(data);
+    chrome.browserAction.setBadgeText({
+        text: urllib[id].length.toString(),
+        tabId: id
+    });
+    // update popup if active:
+    if (id == currenttabid) {
+        chrome.extension.sendMessage({
+            action: "addline",
+            addline: data
+        });
+    }
+}
+
 var onHeadersReceived = function(callback, urlfilter) {
     var removed = {};
     var onHeadersReceived = function(details) {
         var id = details.tabId;
-        urllib[id] = urllib[id] || []
         if (id > -1 && !removed[id]) {
             chrome.tabs.get(id, function(tab) {
-                callback(tab.url, tab.title, details, function(data) {
-                    for (var i = 0; i < urllib[id].length; i++) {
-                        if (urllib[id][i].url === data.url) {
-                            return null ;
-                        }
-                    }
-                    urllib[id].push(data);
-                    if (id == tabid) {
-                        chrome.extension.sendMessage({
-                            action: "addline",
-                            addline: data
-                        });
-                    }
-                });
+                callback(id, details.url, tab.title, details, UpdateTabLib);
             });
         }
         return null ;
@@ -298,7 +323,15 @@ onHeadersReceived(CommonListener, {
     "*://*/*.flv*", 
     "*://*/*.m3u8*", 
     //"*://*/*video*",
+    ],
+});
+
+onHeadersReceived(ResolveListener, {
+    urls: [
     "*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", 
+    "*://rutube.ru/video/*", "*://rutube.ru/play/embed/*", "*://rutube.ru/tags/video/*", "*://rutube.ru/metainfo/tv/*", 
+    "*://*.vimeo.com/*/video/*", "*://*.vimeo.com/video/*", "*://*.vimeopro.com/*/video/*", "*://*.vimeopro.com/video/*", 
+    "*://*.vk.com/video*", 
     ],
 });
 
@@ -322,35 +355,33 @@ onHeadersReceived(HDSListener, {
     urls: ["*://*/*hds/track*"],
 });
 
-chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
-    //console.log('tabs.onUpdated', changeInfo, tab);
-    if (changeInfo.status == 'loading'
-    //&& typeof changeInfo.url === 'undefined'
-    //&& typeof changeInfo.url !== 'undefined'
+chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
+    if (changeInfo.status == 'loading' 
+    && typeof changeInfo.url !== 'undefined'
     ) {
-    //console.log('reload tabid:', tabId, changeInfo, tab);
-    //        urllib[tabId] = [];
-    //        chrome.extension.sendMessage({
-    //            action: "cleantab",
-    //            cleantab: tabId
-    //        });    
+        console.log('reload tabid:', id, changeInfo, tab);
+        ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
     }
 });
 
 function context_onclick(info, tab) {
-    console.log('context_onclick', info, tab)
+    console.log('context_onclick', info, tab);
+    ResolveListener(tab.id, info.linkUrl, info.selectionText, tab, UpdateTabLib);
 }
 
 chrome.contextMenus.create({
-    title: "send to torrent2http",
+    title: "send to loadsniffer",
     contexts: ['link', 'video'],
     onclick: context_onclick
 });
 
+chrome.browserAction.setBadgeBackgroundColor({
+    color: '#2196F3'
+});
 
 var onStartupOrOnInstalledListener = function() {
     console.log("onStartupOrOnInstalledListener");
-    mrcstatus.connect();
+    mrc.connect();
 }
 
 chrome.runtime.onStartup.addListener(function() {

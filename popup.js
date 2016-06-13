@@ -1,6 +1,6 @@
 var tabid = null ;
 
-var addSingleLink = function(line, textcontent, url, title) {
+var addSingleLink = function(line, textcontent, url, title, cookie) {
     var span = document.createElement("span");
     span.textContent = textcontent;
     span.title = url;
@@ -10,6 +10,7 @@ var addSingleLink = function(line, textcontent, url, title) {
             action: "play",
             play: {
                 title: title,
+                cookie: cookie,
                 url: url
             }
         })
@@ -18,12 +19,11 @@ var addSingleLink = function(line, textcontent, url, title) {
 }
 
 var addLine = function(container, linkSource) {
-    console.log(linkSource);
     var line = document.createElement("div");
-    addSingleLink(line, linkSource.src + ': ' + linkSource.title || linkSource.url, linkSource.url, linkSource.title || linkSource.url);
+    addSingleLink(line, linkSource.src + ': ' + linkSource.title || linkSource.url, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie);
     if (typeof linkSource.bitrate !== 'undefined') {
         for (var i = 0; i < linkSource.bitrate.length; i++) {
-            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url);
+            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie);
         }
     }
     //container.appendChild(line);
@@ -33,7 +33,6 @@ var addLine = function(container, linkSource) {
 var addLinks = function(videoLinks) {
     var container = document.getElementById("content");
     container.style.cursor = 'pointer';
-    console.log('container', container);
     for (var i = 0; i < videoLinks.length; ++i) {
         addLine(container, videoLinks[i]);
     }
