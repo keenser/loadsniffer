@@ -14,6 +14,7 @@ from coherence.upnp.devices.control_point import ControlPoint
 from coherence.upnp.core import DIDLLite
 import json
 import urllib
+import TorrentStream
 
 def printall(*args, **kwargs):
     print args, kwargs
@@ -176,13 +177,14 @@ class Info(Resource):
             return server.NOT_DONE_YET
         return "no 'url' parameter pecified"
 
-class Play(WebSocketServerProtocol):
-    def onMessage(self, payload, isBinary):
-        data = json.loads(payload)
-        print "Payload", payload, "data", data
-        if data.get('url', None):
-            print "push to play url:", data.get('url')
-            upnp.play(data.get('url'), data.get('title', 'Video'))
+class Play(Resource):
+    def render_GET(self, request):
+        url = request.args.get('url',[None])[0]
+        if url:
+            print "push to play url:", request.args.get('url')
+            upnp.play(request.args.get('url'), request.args.get('title', 'Video'))
+            return 'play'
+        return "no 'url' parameter pecified"
 
 class WS(WebSocketServerProtocol):
     def onOpen(self):
@@ -234,6 +236,12 @@ def start():
     ws = WebSocketServerFactory()
     ws.protocol = WS
     root.putChild("ws", WebSocketResource(ws))
+    torrentstream = TorrentStream()
+    bt = Resource()
+    bt.putChild("add", torrentstream)
+    bt.putChild("info", torrentstream)
+    bt.putChild("get", torrentstream)
+    root.putChild("bt", bt)
 
     site = server.Site(root)
     reactor.listenTCP(8880, site)
