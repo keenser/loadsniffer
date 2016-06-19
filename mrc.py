@@ -236,12 +236,7 @@ def start():
     ws = WebSocketServerFactory()
     ws.protocol = WS
     root.putChild("ws", WebSocketResource(ws))
-    torrentstream = TorrentStream()
-    bt = Resource()
-    bt.putChild("add", torrentstream)
-    bt.putChild("info", torrentstream)
-    bt.putChild("get", torrentstream)
-    root.putChild("bt", bt)
+    root.putChild("bt", TorrentStream())
 
     site = server.Site(root)
     reactor.listenTCP(8880, site)
