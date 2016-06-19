@@ -125,7 +125,7 @@ class TorrentStream(static.File):
             #alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
             alert.handle.prioritize_files(alert.handle.get_torrent_info().num_files() * [TorrentStream.PAUSE])
 
-        #def torrent_checked_alert(alert):
+        def torrent_checked_alert(alert):
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
@@ -136,7 +136,7 @@ class TorrentStream(static.File):
 
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_added_alert', torrent_added_alert)
-        #self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
+        self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
