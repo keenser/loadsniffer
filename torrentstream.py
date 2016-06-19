@@ -20,15 +20,16 @@ class TorrentProducer(static.StaticProducer):
         self.request = request
         self.fileinfo = fileinfo
         self.offset = offset
-        self.size = size or fileinfo.info.size
+        self.size = size or fileinfo.info.size - offset
+        self.lastoffset = self.offset + self.size
         self.priority_window = None
 
     def read_piece_alert(self, alert):
         print("read_piece_alert", alert.piece, alert.size)
-        buffer = alert.buffer[self.piece.start:self.size - self.offset]
+        buffer = alert.buffer[self.piece.start:self.lastoffset - self.offset]
         self.request.write(buffer)
         self.offset += len(buffer)
-        if self.offset < self.size:
+        if self.offset < self.lastoffset:
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
 
     def piece_finished_alert(self, alert):
@@ -47,16 +48,15 @@ class TorrentProducer(static.StaticProducer):
         print("stopProducing")
         self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
-        self.fileinfo.handle.file_priority(self.fileinfo.id, TorrentStream.PAUSE)
+        #self.fileinfo.handle.file_priority(self.fileinfo.id, TorrentStream.PAUSE)
 
     def start(self):
         self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
-        self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.size, self.size)
-#        for i in range(self.firstpiece.piece, self.lastpiece.piece):
-#            self.fileinfo.handle.piece_priority(i, TorrentStream.PAUSE)
-#        self.fileinfo.handle.file_priority(self.fileinfo.id, TorrentStream.NORMAL)
+        self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, self.size)
+        #self.fileinfo.handle.file_priority(self.fileinfo.id, TorrentStream.LOW)
+        #self.fileinfo.handle.prioritize_files(self.fileinfo.handle.get_torrent_info().num_files() * [TorrentStream.NORMAL])
         self.slide(self.piece.piece)
         self.request.registerProducer(self, 0)
 
@@ -79,7 +79,8 @@ class TorrentProducer(static.StaticProducer):
 class TorrentStream(static.File):
     isLeaf = True
     PAUSE = 0
-    NORMAL = 1
+    LOW = 1
+    NORMAL = 4
     HIGHEST = 7
     def __init__(self, **options):
         self._torrent_handlers = {}
@@ -87,21 +88,21 @@ class TorrentStream(static.File):
         self._files_list = {}
         self.options = options
         self.session = session = libtorrent.session()
+        reactor.callInThread(self._alert_queue_loop)
 
         session.set_alert_mask(
                 libtorrent.alert.category_t.tracker_notification |
                 libtorrent.alert.category_t.storage_notification |
                 libtorrent.alert.category_t.progress_notification |
                 libtorrent.alert.category_t.status_notification |
-                libtorrent.alert.category_t.error_notification |
-                libtorrent.alert.category_t.peer_notification
+                libtorrent.alert.category_t.peer_notification |
+                libtorrent.alert.category_t.error_notification
                 )
         session.start_dht()
         session.start_lsd()
         session.start_upnp()
         session.start_natpmp()
         session.listen_on(options.get('min_port', 6881), options.get('max_port', 6889))
-        reactor.callInThread(self._alert_queue_loop)
 
         session_settings = session.settings()
         session_settings.strict_end_game_mode = False
@@ -120,21 +121,22 @@ class TorrentStream(static.File):
         session.set_pe_settings(encryption_settings)
 
         def metadata_received_alert(alert):
-            print('pause {} files'.format(alert.handle.get_torrent_info().num_files()))
+            print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
+            #alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
             alert.handle.prioritize_files(alert.handle.get_torrent_info().num_files() * [TorrentStream.PAUSE])
 
-        def torrent_checked_alert(alert):
+        #def torrent_checked_alert(alert):
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
 
         def torrent_added_alert(alert):
             self._torrent_handlers[str(alert.handle.info_hash())] = alert.handle
-            alert.handle.resume()
+            #alert.handle.set_sequential_download(True)
 
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_added_alert', torrent_added_alert)
-        self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
+        #self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
@@ -145,8 +147,8 @@ class TorrentStream(static.File):
 
     def _handle_alert(self, alerts):
         for alert in alerts:
-            #if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
-            #    print('{0}: {1}'.format(alert.what(), alert.message()))
+            if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
+                print('{0}: {1}'.format(alert.what(), alert.message()))
             if alert.what() in self._alert_handlers:
                 for handler in self._alert_handlers[alert.what()]:
                     handler(alert)
@@ -175,6 +177,7 @@ class TorrentStream(static.File):
         add_torrent_params['save_path'] = self.options.get('save_path', '/tmp/')
         add_torrent_params['storage_mode'] = libtorrent.storage_mode_t.storage_mode_sparse
         add_torrent_params['auto_managed'] = False
+        add_torrent_params['paused'] = False
         self.session.async_add_torrent(add_torrent_params)
 
     def list_torrents(self):
@@ -218,8 +221,10 @@ class TorrentStream(static.File):
             self.add_torrent(url)
             return '{"status": "ok"}'
         elif request.postpath[0] == 'info':
-            print("alert_handlers", self._alert_handlers)
             status = {}
+            sst = self.session.status()
+            status['dht_nodes'] = sst.dht_nodes
+            status['is_dht_running'] = self.session.is_dht_running()
             for info_hash, handle in self._torrent_handlers.items():
                 s = {}
                 if handle.has_metadata():
@@ -230,11 +235,26 @@ class TorrentStream(static.File):
                         else:
                             piece_map += str(handle.piece_priority(piece_index))
                     s['pm'] = piece_map
+                    file_map = ''
+                    for file_index in range(handle.get_torrent_info().num_files()):
+                        file_map += str(handle.file_priority(file_index))
+                    s['fm'] = file_map
                 s['m'] = handle.has_metadata()
+                s['is_paused'] = handle.is_paused()
                 st = handle.status()
                 s['paused'] = st.paused
                 s['state'] = st.state
+                s['error'] = st.error
                 s['progress'] = st.progress
+                s['download_rate'] = st.download_rate
+                s['upload_rate'] = st.upload_rate
+                s['num_seeds'] = st.num_seeds
+                s['num_complete'] = st.num_complete
+                s['num_peers'] = st.num_peers
+                s['num_incomplete'] = st.num_incomplete
+                s['auto_managed'] = st.auto_managed
+                s['trackers'] = handle.trackers()
+                s['upload_mode'] = st.upload_mode
                 status[info_hash] = s
             return json.dumps(status)
             #return json.dumps(self.list_torrents())
