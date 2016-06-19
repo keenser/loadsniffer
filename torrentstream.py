@@ -14,7 +14,7 @@ from collections import namedtuple
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
 
-class TorrentProducer(static.StaticProducer):
+class DynamicTorrentProducer(static.StaticProducer):
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
         self.stream = stream
         self.request = request
@@ -74,6 +74,37 @@ class TorrentProducer(static.StaticProducer):
             for window in range(self.priority_window + 1, min(self.lastpiece.piece + 1, self.priority_window + TorrentStream.HIGHEST + 1)):
                 self.fileinfo.handle.piece_priority(window, priority)
                 priority -= 1
+
+
+class TorrentProducer(DynamicTorrentProducer):
+    def read_piece(self):
+        if not hasattr(self, 'fileObject'):
+            self.fileObject = open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb')
+            self.fileObject.seek(self.offset)
+            self.piecelenght = self.fileinfo.handle.get_torrent_info().piece_length()
+
+        data = self.fileObject.read(self.piecelenght - self.piece.start)
+        if data:
+            self.offset += len(data)
+            self.request.write(data)
+        if self.offset < self.lastoffset:
+            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
+
+    def stopProducing(self):
+        super(DynamicTorrentProducer, self).stopProducing()
+        self.fileObject.close()
+
+    def resumeProducing(self):
+        print("index", self.piece.piece)
+        if self.fileinfo.handle.have_piece(self.piece.piece):
+            self.read_piece()
+
+    def piece_finished_alert(self, alert):
+        print("piece_finished_alert", alert.message())
+        if alert.piece_index == self.piece.piece:
+            self.read_piece()
+        if alert.piece_index == self.priority_window:
+            self.slide()
 
 
 class TorrentStream(static.File):
