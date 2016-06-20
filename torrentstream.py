@@ -36,8 +36,8 @@ class DynamicTorrentProducer(static.StaticProducer):
         print("piece_finished_alert", alert.message())
         if alert.piece_index == self.piece.piece:
             alert.handle.read_piece(self.piece.piece)
-        if alert.piece_index == self.priority_window:
-            self.slide()
+        #if alert.piece_index == self.priority_window:
+        self.slide()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
@@ -48,15 +48,12 @@ class DynamicTorrentProducer(static.StaticProducer):
         print("stopProducing")
         self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
-        #self.fileinfo.handle.file_priority(self.fileinfo.id, TorrentStream.PAUSE)
 
     def start(self):
         self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
         self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, self.size)
-        #self.fileinfo.handle.file_priority(self.fileinfo.id, TorrentStream.LOW)
-        #self.fileinfo.handle.prioritize_files(self.fileinfo.handle.get_torrent_info().num_files() * [TorrentStream.NORMAL])
         self.slide(self.piece.piece)
         self.request.registerProducer(self, 0)
 
@@ -76,9 +73,9 @@ class DynamicTorrentProducer(static.StaticProducer):
                 priority -= 1
 
 
-class TorrentProducer(DynamicTorrentProducer):
+class StaticTorrentProducer(DynamicTorrentProducer):
     def read_piece(self):
-        if not hasattr(self, 'fileObject'):
+        if not hasattr(self, 'fileObject') or self.fileObject.closed:
             self.fileObject = open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb')
             self.fileObject.seek(self.offset)
             self.piecelenght = self.fileinfo.handle.get_torrent_info().piece_length()
@@ -91,7 +88,7 @@ class TorrentProducer(DynamicTorrentProducer):
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
 
     def stopProducing(self):
-        super(DynamicTorrentProducer, self).stopProducing()
+        super(StaticTorrentProducer, self).stopProducing()
         self.fileObject.close()
 
     def resumeProducing(self):
@@ -101,11 +98,12 @@ class TorrentProducer(DynamicTorrentProducer):
 
     def piece_finished_alert(self, alert):
         print("piece_finished_alert", alert.message())
-        if alert.piece_index == self.piece.piece:
-            self.read_piece()
-        if alert.piece_index == self.priority_window:
-            self.slide()
+        self.resumeProducing()
+        self.slide()
 
+
+class TorrentProducer(StaticTorrentProducer):
+    pass
 
 class TorrentStream(static.File):
     isLeaf = True
@@ -153,10 +151,9 @@ class TorrentStream(static.File):
 
         def metadata_received_alert(alert):
             print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
-            #alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
-            alert.handle.prioritize_files(alert.handle.get_torrent_info().num_files() * [TorrentStream.PAUSE])
 
         def torrent_checked_alert(alert):
+            alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
@@ -276,7 +273,7 @@ class TorrentStream(static.File):
                 s['paused'] = st.paused
                 s['state'] = st.state
                 s['error'] = st.error
-                s['progress'] = st.progress
+                s['progress'] = '{:.2%}'.format(st.progress)
                 s['download_rate'] = st.download_rate
                 s['upload_rate'] = st.upload_rate
                 s['num_seeds'] = st.num_seeds
