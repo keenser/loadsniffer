@@ -14,7 +14,7 @@ from coherence.upnp.devices.control_point import ControlPoint
 from coherence.upnp.core import DIDLLite
 import json
 import urllib
-import TorrentStream
+import torrentstream
 
 def printall(*args, **kwargs):
     print args, kwargs
@@ -226,17 +226,16 @@ class WS(WebSocketServerProtocol):
             d.addErrback(jsonsend)
 
 upnp = UPnPctrl()
+torrent = torrentstream.TorrentStream(save_path='/media/sda/tmp/')
 
 def start():
     root = Resource()
     root.putChild("info", Info())
-    play = WebSocketServerFactory()
-    play.protocol = Play
-    root.putChild("play", WebSocketResource(play))
+    root.putChild("play", Play())
+    root.putChild("bt", torrent)
     ws = WebSocketServerFactory()
     ws.protocol = WS
     root.putChild("ws", WebSocketResource(ws))
-    root.putChild("bt", TorrentStream())
 
     site = server.Site(root)
     reactor.listenTCP(8880, site)
