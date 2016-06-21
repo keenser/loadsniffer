@@ -31,18 +31,19 @@ class DynamicTorrentProducer(static.StaticProducer):
         self.offset += len(buffer)
         if self.offset < self.lastoffset:
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
+        #elif self.request:
+        #    self.request.unregisterProducer()
+        #    self.request.finish()
+        #    self.stopProducing()
 
     def piece_finished_alert(self, alert):
         print("piece_finished_alert", alert.message())
-        if alert.piece_index == self.piece.piece:
-            alert.handle.read_piece(self.piece.piece)
-        #if alert.piece_index == self.priority_window:
-        self.slide()
+        if alert.piece_index == self.priority_window:
+            self.slide()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
-        if self.fileinfo.handle.have_piece(self.piece.piece):
-            self.fileinfo.handle.read_piece(self.piece.piece)
+        self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0, libtorrent.deadline_flags.alert_when_available)
 
     def stopProducing(self):
         print("stopProducing")
@@ -54,7 +55,16 @@ class DynamicTorrentProducer(static.StaticProducer):
         self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
         self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, self.size)
+        self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
+
+        # priority window size 4Mb * 8
+        priorityblock = (4 * 1024 * 1024 )/ self.piecelength
+        # piece_length more then 4Mb ?
+        if priorityblock < 1:
+            priorityblock = 1
+        self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
         self.slide(self.piece.piece)
+
         self.request.registerProducer(self, 0)
 
     def slide(self, offset = None):
@@ -65,12 +75,10 @@ class DynamicTorrentProducer(static.StaticProducer):
             self.priority_window += 1
         print("priority_window", self.priority_window)
         if self.priority_window <= self.lastpiece.piece:
-            # set next eight pieces priority to 77654321
-            self.fileinfo.handle.piece_priority(self.priority_window, TorrentStream.HIGHEST)
-            priority = TorrentStream.HIGHEST
-            for window in range(self.priority_window + 1, min(self.lastpiece.piece + 1, self.priority_window + TorrentStream.HIGHEST + 1)):
-                self.fileinfo.handle.piece_priority(window, priority)
-                priority -= 1
+            priority = 0
+            for window in range(self.priority_window, min(self.lastpiece.piece + 1, self.priority_window + len(self.prioritymask))):
+                self.fileinfo.handle.piece_priority(window, self.prioritymask[priority])
+                priority += 1
 
 
 class StaticTorrentProducer(DynamicTorrentProducer):
@@ -78,9 +86,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         if not hasattr(self, 'fileObject') or self.fileObject.closed:
             self.fileObject = open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb')
             self.fileObject.seek(self.offset)
-            self.piecelenght = self.fileinfo.handle.get_torrent_info().piece_length()
 
-        data = self.fileObject.read(self.piecelenght - self.piece.start)
+        data = self.fileObject.read(self.piecelength - self.piece.start)
         if data:
             self.offset += len(data)
             self.request.write(data)
@@ -95,11 +102,14 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         print("index", self.piece.piece)
         if self.fileinfo.handle.have_piece(self.piece.piece):
             self.read_piece()
+        else:
+            self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0)
 
     def piece_finished_alert(self, alert):
         print("piece_finished_alert", alert.message())
         self.resumeProducing()
-        self.slide()
+        if alert.piece_index == self.priority_window:
+            self.slide()
 
 
 class TorrentProducer(StaticTorrentProducer):
@@ -137,6 +147,8 @@ class TorrentStream(static.File):
         session_settings.strict_end_game_mode = False
         session_settings.announce_to_all_tiers = True
         session_settings.announce_to_all_trackers = True
+        session_settings.low_prio_disk = False
+        session_settings.use_disk_cache_pool = True
         session.set_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
@@ -173,7 +185,7 @@ class TorrentStream(static.File):
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
         while reactor.running:
-            if not self.session.wait_for_alert(500):
+            if not self.session.wait_for_alert(5000):
                 continue
             reactor.callLater(0, self._handle_alert, self.session.pop_alerts())
 
