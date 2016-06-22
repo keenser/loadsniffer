@@ -59,7 +59,7 @@ class DynamicTorrentProducer(static.StaticProducer):
 
         # priority window size 4Mb * 8
         priorityblock = (4 * 1024 * 1024 )/ self.piecelength
-        # piece_length more then 4Mb ?
+        # piece_length more than 4Mb ?
         if priorityblock < 1:
             priorityblock = 1
         self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
@@ -163,6 +163,12 @@ class TorrentStream(static.File):
 
         def metadata_received_alert(alert):
             print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
+            self._torrent_handlers[str(alert.handle.info_hash())] = alert.handle
+
+        def torrent_update_alert(alert):
+            handle = self._torrent_handlers.pop(str(alert.old_ih), None)
+            if handle:
+                self._torrent_handlers[str(alert.new_ih)] = handle
 
         def torrent_checked_alert(alert):
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
@@ -170,17 +176,9 @@ class TorrentStream(static.File):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
 
-        def torrent_added_alert(alert):
-            self._torrent_handlers[str(alert.handle.info_hash())] = alert.handle
-            #alert.handle.set_sequential_download(True)
-
-        def torrent_error_alert(alert):
-            self.remove_torrent(str(alert.handle.info_hash()))
-
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
-        self.add_alert_handler('torrent_added_alert', torrent_added_alert)
+        self.add_alert_handler('torrent_update_alert', torrent_update_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
-        self.add_alert_handler('torrent_error_alert', torrent_error_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
@@ -228,6 +226,8 @@ class TorrentStream(static.File):
         handle = self._torrent_handlers.pop(info_hash, None)
         if handle:
             self.session.remove_torrent(handle, libtorrent.options_t.delete_files)
+            return {'status': '{} removed'.format(info_hash)}
+        return {'error': '{} not found'.format(info_hash)}
 
     def list_torrents(self):
         data = {}
@@ -304,30 +304,41 @@ class TorrentStream(static.File):
 
     def render_GET(self, request):
         url = request.args.get('url',[None])[0]
+        ret = None
         if request.postpath[0] == 'add' and url:
             self.add_torrent(url)
-            return '{"status": "ok"}'
+            ret = {'status': '{} added'.format(url)}
         elif request.postpath[0] == 'info':
-            return json.dumps(self.status())
+            ret = self.status()
         elif request.postpath[0] == 'ls':
-            return json.dumps(self._files_list.keys())
+            ret = self._files_list.keys()
         elif request.postpath[0] == 'get' and url:
-            self.type, self.encoding = static.getTypeAndEncoding(url,
+            if url not in self._files_list.keys():
+                ret = {'error': '{} not found'.format(url)}
+            else:
+                self.type, self.encoding = static.getTypeAndEncoding(url,
                                               self.contentTypes,
                                               self.contentEncodings,
                                               "text/html")
 
-            if url not in self._files_list.keys():
-                return self.childNotFound.render(request)
+                request.setHeader('accept-ranges', 'bytes')
 
-            request.setHeader('accept-ranges', 'bytes')
+                self.fileForReading = self._files_list[url]
+                producer = self.makeProducer(request, self.fileForReading)
+                producer.start()
+                ret = server.NOT_DONE_YET
+        elif request.postpath[0] == 'rm' and url:
+            ret = self.remove_torrent(url)
+        else:
+            prepath = '{}:{}/{}'.format(request.host.host, request.host.port, '/'.join(request.prepath))
+            ret = {'example': [ '{p}/add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
+                                '{p}/get?url=file.avi'.format(p=prepath),
+                                '{p}/rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
+                                '{p}/info'.format(p=prepath),
+                                '{p}/ls'.format(p=prepath)
+                              ]}
 
-            self.fileForReading = self._files_list[url]
-            producer = self.makeProducer(request, self.fileForReading)
-            producer.start()
-            return server.NOT_DONE_YET
-
-        return '{"status": "unknown url"}'
+        return json.dumps(ret)
 
 
 def main():
