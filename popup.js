@@ -1,12 +1,10 @@
 var tabid = null ;
-
 var addSingleLink = function(line, textcontent, url, title, cookie) {
     var span = document.createElement("span");
     span.textContent = textcontent;
     span.title = url;
     span.addEventListener('click', function(e) {
-        chrome.extension.sendMessage(
-        {
+        chrome.extension.sendMessage({
             action: "play",
             play: {
                 title: title,
@@ -17,11 +15,10 @@ var addSingleLink = function(line, textcontent, url, title, cookie) {
     });
     line.appendChild(span);
 }
-
 var addLine = function(container, linkSource) {
     var line = document.createElement("div");
     addSingleLink(line, linkSource.src + ': ' + linkSource.title || linkSource.url, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie);
-    if (typeof linkSource.bitrate !== 'undefined') {
+    if (linkSource.bitrate !== undefined) {
         for (var i = 0; i < linkSource.bitrate.length; i++) {
             addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie);
         }
@@ -29,7 +26,6 @@ var addLine = function(container, linkSource) {
     //container.appendChild(line);
     container.insertBefore(line, container.firstChild);
 }
-
 var addLinks = function(videoLinks) {
     var container = document.getElementById("content");
     container.style.cursor = 'pointer';
@@ -37,49 +33,36 @@ var addLinks = function(videoLinks) {
         addLine(container, videoLinks[i]);
     }
 }
-
+var addBt = function(btlib) {
+    var container = document.getElementById("bt");
+    container.style.cursor = 'pointer';
+    for (var i = 0; i < btlib.length; ++i) {
+        addLine(container, btlib[i]);
+    }
+}
 chrome.tabs.getSelected(null , function(tab) {
     tabid = tab.id;
     chrome.extension.sendMessage({
         action: "tabid",
         tabid: tabid
-    }, function(urllib) {
-        addLinks(urllib);
+    }, function(data) {
+        addLinks(data.urllib);
+        addBt(data.btlib);
     });
 });
-
 chrome.extension.onMessage.addListener(function(request, sender) {
     if (request.action === 'addline') {
         var container = document.getElementById("content");
         addLine(container, request.addline);
-    }
-    else if (request.action === 'cleantab') {
+    } else if (request.action === 'cleantab') {
         if (request.cleantab == tabid) {
             var container = document.getElementById("content");
             container.innerText = '';
         }
-    }
-    else if (request.action === 'upnp') {
+    } else if (request.action === 'upnp') {
         var container = document.getElementById("upnp");
         container.textContent = request.upnp.state + ": " + request.upnp.item[0].title;
+    } else if (request.action === 'btlib') {
+        addBt(request.btlib);
     }
 });
-
-//function onWindowLoad() {
-//  var message = document.querySelector('#message');
-//
-//chrome.tabs.getSelected(null,function(tab) {
-//  console.log('tabs',tab);
-//});
-//  message.innerText = '11';
-//  console.log('1:', _tabid);
-//  chrome.extension.sendMessage(
-//    { action: "getSource", tabid: _tabid},
-//    function(backMessage){
-//	console.log('2. popup onWindowLoad backMessage:', backMessage);
-//        message.innerText = backMessage +" "+ _tabid;
-//    }
-// );
-// console.log('3');
-//}
-//window.onload = onWindowLoad;
