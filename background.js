@@ -21,7 +21,7 @@ function MRCServer(url, handler) {
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
             if (!doclose) {
-                mrc.connect();
+                mrc.connect(opencallback);
             }
         }
         websocket.onmessage = function(data) {
@@ -331,7 +331,6 @@ chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
     }
 });
 chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
-    console.log('onMessage', request);
     if (request.action == 'tabid') {
         currenttabid = request.tabid;
         f_callback({
