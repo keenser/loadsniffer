@@ -356,8 +356,12 @@ class TorrentStream(static.File):
 
                 self.fileForReading = self._files_list[url]
                 producer = self.makeProducer(request, self.fileForReading)
+
+                if request.method == 'HEAD':
+                    return ''
+
                 producer.start()
-                ret = server.NOT_DONE_YET
+                return server.NOT_DONE_YET
         elif request.postpath[0] == 'rm' and url:
             ret = self.remove_torrent(url)
         else:
@@ -370,6 +374,8 @@ class TorrentStream(static.File):
                               ]}
 
         return json.dumps(ret)
+
+    render_HEAD = render_GET
 
 
 def main():
