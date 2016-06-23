@@ -150,7 +150,7 @@ class Info(Resource):
 
     @staticmethod
     def youtube_dl(url):
-        try:
+        #try:
             ydl = youtube_dl.YoutubeDL(params={'quiet': True, 'cachedir': '/tmp/', 'youtube_include_dash_manifest': False})
             stream = ydl.extract_info(url, download=False, process=True)
             #format_selector = ydl.build_format_selector('all[height>=480]')
@@ -164,8 +164,8 @@ class Info(Resource):
                 if i.get('acodec') != 'none' and i.get('vcodec') != 'none':
                     data['bitrate'].append({'url':i.get('url'), 'bitrate':i.get('height') or i.get('format_id')})
             return data
-        except youtube_dl.utils.DownloadError as e:
-            return {'error':str(e)}
+        #except youtube_dl.utils.DownloadError as e:
+        #    return None
 
     def render_GET(self, request):
         url = request.args.get('url',[None])[0]
@@ -188,20 +188,26 @@ class Play(Resource):
 
 class WS(WebSocketServerProtocol):
     def onOpen(self):
-        def jsonsend(message):
+        def upnpupdate(message):
             self.sendMessage(json.dumps({'action':'upnp', 'upnp':message}))
 
-        self._jsonsend = jsonsend
-        print "WS client connected", id(self._jsonsend)
-        upnp.on_status_change(True, self._jsonsend)
+        def btupdate(alert):
+            files = [i for i in alert.files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
+            self.sendMessage(json.dumps({'action':'bt', 'bt':{'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}}))
+
+        self._upnpupdate = upnpupdate
+        self._btupdate = btupdate
+        print "WS client connected", id(self._upnpupdate)
+        upnp.on_status_change(True, self._upnpupdate)
+        torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self, wasClean, code, reason):
-        print "WS client closed", reason , id(self._jsonsend)
-        upnp.on_status_change(None, self._jsonsend)
+        print "WS client closed", reason , id(self._upnpupdate)
+        upnp.on_status_change(None, self._upnpupdate)
+        torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
     def onMessage(self, payload, isBinary):
         jsondata = json.loads(payload)
-        print "onMessage payload", payload, "jsondata", jsondata
         if jsondata.get('action') == 'play':
             data = jsondata['play']
             if data.get('url', None):
@@ -218,12 +224,22 @@ class WS(WebSocketServerProtocol):
         elif jsondata.get('action') == 'info':
             uid = jsondata.get('_uid')
             data = jsondata.get('info')
+            url = data['url']
+            print "info", url
             def jsonsend(message):
                 self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
-            url = data['url']
+            def bittorrent(message):
+                torrent.add_torrent(url)
+                jsonsend(None)
             d = threads.deferToThread(Info.youtube_dl, url)
             d.addCallback(jsonsend)
-            d.addErrback(jsonsend)
+            d.addErrback(bittorrent)
+        elif jsondata.get('action') == 'bt':
+            uid = jsondata.get('_uid')
+            filelist = torrent.list_files()
+            files = [i for i in filelist if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
+            message = {'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}
+            self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
 
 upnp = UPnPctrl()
 torrent = torrentstream.TorrentStream(save_path='/media/sda/tmp/')

@@ -115,6 +115,18 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 class TorrentProducer(StaticTorrentProducer):
     pass
 
+
+class Files_List_Update_Alert(object):
+    _what = 'files_list_update_alert'
+    _message = '{} files updated'
+    def __init__(self, files):
+        self.files = files
+    def what(self):
+        return self._what
+    def message(self):
+        return self._message.format(len(self.files))
+
+
 class TorrentStream(static.File):
     isLeaf = True
     PAUSE = 0
@@ -164,6 +176,10 @@ class TorrentStream(static.File):
         def metadata_received_alert(alert):
             print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
             self._torrent_handlers[str(alert.handle.info_hash())] = alert.handle
+            for i in range(alert.handle.get_torrent_info().num_files()):
+                info = alert.handle.get_torrent_info().file_at(i)
+                self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
+            self._handle_alert([Files_List_Update_Alert(self.list_files())])
 
         def torrent_update_alert(alert):
             handle = self._torrent_handlers.pop(str(alert.old_ih), None)
@@ -172,13 +188,18 @@ class TorrentStream(static.File):
 
         def torrent_checked_alert(alert):
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
-            for i in range(alert.handle.get_torrent_info().num_files()):
-                info = alert.handle.get_torrent_info().file_at(i)
-                self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
+
+        def torrent_removed_alert(alert):
+            info_hash = str(alert.handle.info_hash())
+            for path, handle in self._files_list.items():
+                if str(handle.handle.info_hash()) == info_hash:
+                    del self._files_list[path]
+            self._handle_alert([Files_List_Update_Alert(self.list_files())])
 
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_update_alert', torrent_update_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
+        self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
@@ -236,6 +257,9 @@ class TorrentStream(static.File):
             for file in handler.get_torrent_info().files():
                 data[info_hash].append(file.path)
         return data
+
+    def list_files(self):
+        return self._files_list.keys()
 
     def status(self):
         status = {}
@@ -311,9 +335,9 @@ class TorrentStream(static.File):
         elif request.postpath[0] == 'info':
             ret = self.status()
         elif request.postpath[0] == 'ls':
-            ret = self._files_list.keys()
+            ret = self.list_files()
         elif request.postpath[0] == 'get' and url:
-            if url not in self._files_list.keys():
+            if url not in self.list_files():
                 ret = {'error': '{} not found'.format(url)}
             else:
                 self.type, self.encoding = static.getTypeAndEncoding(url,
