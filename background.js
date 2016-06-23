@@ -1,28 +1,24 @@
 var urllib = [];
+var btlib = [];
 var currenttabid = null ;
 var mrcurl = "ws://192.168.1.19:8880/ws"
-
 function MRCServer(url, handler) {
     var mrc = {};
     var doclose = false;
     var websocket = null ;
     var uid = 1;
     var callback_pool = {};
-    
     mrc.url = url;
     mrc.disconnect = function() {
         doclose = true;
         console.log("disconnect", websocket);
         websocket && websocket.close && websocket.close();
     }
-    
-    mrc.connect = function() {
+    mrc.connect = function(opencallback) {
         doclose = false;
         websocket = new WebSocket(mrc.url);
         websocket.binaryType = "arraybuffer";
-        websocket.onopen = function() {
-            console.log("onopen websocket", websocket);
-        }
+        websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
             if (!doclose) {
                 mrc.connect();
@@ -34,13 +30,11 @@ function MRCServer(url, handler) {
             if (jsondata['_uid'] !== undefined) {
                 callback_pool[jsondata['_uid']](jsondata['data']);
                 delete callback_pool[jsondata['_uid']];
-            } 
-            else if (handler) {
+            } else if (handler) {
                 handler(jsondata);
             }
         }
     }
-    
     mrc.sendMessage = function(data, callback) {
         console.log('send', data);
         if (websocket.readyState) {
@@ -55,38 +49,23 @@ function MRCServer(url, handler) {
     }
     return mrc;
 }
-
-var mrc = new MRCServer(mrcurl,
-function(obj) {
-    console.log("ws obj", obj);
-    chrome.extension.sendMessage(obj);
+var mrc = new MRCServer(mrcurl,function(request) {
+    console.log("ws request", request);
+    if (request.action == 'bt') {
+        UpdateBtLib(request.bt);
+    } else {
+        chrome.extension.sendMessage(request);
+    }
 }
 );
-
-chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
-    if (request.action == 'tabid') {
-        console.log('request tabid info for', request);
-        currenttabid = request.tabid;
-        console.log('return tabId', urllib[request.tabid] || [])
-        f_callback(urllib[request.tabid] || []);
-    } else if (request.action == 'url') {
-        console.log('request url', request.url);
-    } else if (request.action == 'play') {
-        console.log('play', request.play);
-        mrc.sendMessage(request);
-    }
-});
-
 var get = function(url, callback) {
     var xmlRequest = new XMLHttpRequest();
     xmlRequest.open('GET', url, true);
     xmlRequest.send();
-    
     xmlRequest.onload = function() {
         callback(xmlRequest);
     }
 }
-
 var queryHeader = function(headers, headerName) {
     if (headers && headers.length) {
         for (var i = 0; i < headers.length; ++i) {
@@ -97,12 +76,10 @@ var queryHeader = function(headers, headerName) {
     }
     return '';
 }
-
 var LogListener = function(tabid, url, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("LogListener:", tabid, title, url, details.type, type);
 }
-
 var CommonListener = function(tabid, url, title, details, callback) {
     console.log("CommonListener:", tabid, title, url, details.type);
     url = url.replace(/Seg(\d)+-Frag(\d)+/, "");
@@ -113,7 +90,6 @@ var CommonListener = function(tabid, url, title, details, callback) {
     };
     callback(tabid, data);
 }
-
 var ResolveListener = function(tabid, url, title, details, callback) {
     console.log("ResolveListener:", tabid, title, url, details);
     mrc.sendMessage({
@@ -123,24 +99,19 @@ var ResolveListener = function(tabid, url, title, details, callback) {
         }
     }, function(data) {
         console.log("Resolve", data);
-        if (data['error'] === undefined) {
-            callback(tabid, data);
-        }
+        callback(tabid, data);
     });
 }
-
 var RuTubeListener = function(tabid, url, title, details, callback) {
     console.log("RutubeListener:", tabid, title, url, details.type);
     get(url, function(data) {
         var m3u8;
         try {
             m3u8 = data.responseXML.getElementsByTagName('m3u8')[0].textContent.trim();
-        } 
-        catch (e) {
+        } catch (e) {
             try {
                 m3u8 = JSON.parse(data.responseText)['video_balancer']['m3u8'];
-            } 
-            catch (e) {
+            } catch (e) {
                 return
             }
         }
@@ -163,11 +134,9 @@ var RuTubeListener = function(tabid, url, title, details, callback) {
                 bitrate: bitrate
             };
             callback(tabid, data);
-        
         });
     });
 }
-
 var HDSListener = function(tabid, url, title, details, callback) {
     console.log("TrackListener:", tabid, title, url, details.type);
     url = url.substring(0, url.lastIndexOf('/'));
@@ -178,7 +147,6 @@ var HDSListener = function(tabid, url, title, details, callback) {
     }
     callback(tabid, data);
 }
-
 var f4mListener = function(tabid, url, title, details, callback) {
     console.log("f4mListener:", tabid, title, url, details.type);
     get(url, function(data) {
@@ -189,8 +157,7 @@ var f4mListener = function(tabid, url, title, details, callback) {
         console.log('xml', xml);
         try {
             baseurl = xml.getElementsByTagName('baseURL')[0].textContent.trim();
-        } 
-        catch (e) {
+        } catch (e) {
             baseurl = "";
         }
         media = xml.getElementsByTagName('media');
@@ -211,17 +178,14 @@ var f4mListener = function(tabid, url, title, details, callback) {
         callback(tabid, data);
     });
 }
-
 var MailRuListener = function(tabid, url, title, details, callback) {
     var type = queryHeader(details.responseHeaders, 'content-type');
     console.log("MailRuListener:", tabid, title, url, details.type, type);
-    
     if (type === 'video/mp4') {
         chrome.cookies.get({
             url: url,
             name: 'video_key'
-        }, 
-        function(cookie) {
+        }, function(cookie) {
             var data = {
                 src: 'mailru',
                 url: url,
@@ -231,11 +195,9 @@ var MailRuListener = function(tabid, url, title, details, callback) {
             callback(tabid, data);
             return;
         });
-    } 
-    else if (type.startsWith('application/json')) {
+    } else if (type.startsWith('application/json')) {
         jsonurl = url;
-    } 
-    else {
+    } else {
         jsonurl = url;
         jsonurl = jsonurl.replace('https://my.mail.ru/', '');
         jsonurl = jsonurl.replace('/video/', '/');
@@ -250,8 +212,7 @@ var MailRuListener = function(tabid, url, title, details, callback) {
             chrome.cookies.get({
                 url: jsonurl,
                 name: 'video_key'
-            }, 
-            function(cookie) {
+            }, function(cookie) {
                 metaurl = jsondata['meta']['url'];
                 title = jsondata['meta']['title'];
                 bitrate = [];
@@ -270,34 +231,50 @@ var MailRuListener = function(tabid, url, title, details, callback) {
                 };
                 callback(tabid, data);
             });
-        } 
-        catch (e) {
+        } catch (e) {
             console.log(e);
         }
     });
 }
-
+var UpdateBtLib = function(data) {
+    console.log('UpdateBtLib', data);
+    btlib = []
+    for (var i = 0; i < data.files.length; i++) {
+        btlib.push({
+            src: 'bt',
+            url: data.prefix + encodeURIComponent(data.files[i]),
+            title: data.files[i]
+        });
+    }
+    chrome.extension.sendMessage({
+        action: "btlib",
+        btlib: btlib
+    });
+}
 var UpdateTabLib = function(id, data) {
     urllib[id] = urllib[id] || []
-    for (var i = 0; i < urllib[id].length; i++) {
-        if (urllib[id][i].url === data.url) {
-            return null ;
+    if (data !== null ) {
+        for (var i = 0; i < urllib[id].length; i++) {
+            if (urllib[id][i].url === data.url) {
+                return null ;
+            }
+        }
+        urllib[id].push(data);
+        // update popup if active:
+        if (id == currenttabid) {
+            chrome.extension.sendMessage({
+                action: "addline",
+                addline: data
+            });
         }
     }
-    urllib[id].push(data);
-    chrome.browserAction.setBadgeText({
-        text: urllib[id].length.toString(),
-        tabId: id
-    });
-    // update popup if active:
-    if (id == currenttabid) {
-        chrome.extension.sendMessage({
-            action: "addline",
-            addline: data
+    if (urllib[id].length) {
+        chrome.browserAction.setBadgeText({
+            text: urllib[id].length.toString(),
+            tabId: id
         });
     }
 }
-
 var onHeadersReceived = function(callback, urlfilter) {
     var removed = {};
     var onHeadersReceived = function(details) {
@@ -314,80 +291,69 @@ var onHeadersReceived = function(callback, urlfilter) {
     });
     chrome.webRequest.onResponseStarted.addListener(onHeadersReceived, urlfilter, ["responseHeaders"]);
 }
-
 //onHeadersReceived(LogListener, {urls: ["<all_urls>"]});
-
 onHeadersReceived(CommonListener, {
-    urls: [
-    "*://*/*.mp4*", 
-    "*://*/*.flv*", 
-    "*://*/*.m3u8*", 
-    //"*://*/*video*",
+    urls: ["*://*/*.mp4*", "*://*/*.flv*", "*://*/*.m3u8*", //"*://*/*video*",
     ],
 });
-
 onHeadersReceived(ResolveListener, {
-    urls: [
-    "*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", 
-    "*://rutube.ru/video/*", "*://rutube.ru/play/embed/*", "*://rutube.ru/tags/video/*", "*://rutube.ru/metainfo/tv/*", 
-    "*://*.vimeo.com/*/video/*", "*://*.vimeo.com/video/*", "*://*.vimeopro.com/*/video/*", "*://*.vimeopro.com/video/*", 
-    "*://*.vk.com/video*", 
-    ],
+    urls: ["*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", "*://rutube.ru/video/*", "*://rutube.ru/play/embed/*", "*://rutube.ru/tags/video/*", "*://rutube.ru/metainfo/tv/*", "*://*.vimeo.com/*/video/*", "*://*.vimeo.com/video/*", "*://*.vimeopro.com/*/video/*", "*://*.vimeopro.com/video/*", "*://*.vk.com/video*", ],
 });
-
 onHeadersReceived(RuTubeListener, {
     urls: ["*://*.rutube.ru/api/play/options/*", ],
 });
-
 onHeadersReceived(MailRuListener, {
-    urls: [
-    "*://*.my.mail.ru/*.mp4*", 
-    "*://*.mail.ru/*/video/*", 
-    "*://videoapi.my.mail.ru/videos/*"
-    ],
+    urls: ["*://*.my.mail.ru/*.mp4*", "*://*.mail.ru/*/video/*", "*://videoapi.my.mail.ru/videos/*"],
 });
-
 onHeadersReceived(f4mListener, {
     urls: ["*://*/*.f4m*", ],
 });
-
 onHeadersReceived(HDSListener, {
     urls: ["*://*/*hds/track*"],
 });
-
-chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
-    if (changeInfo.status == 'loading' 
-    && typeof changeInfo.url !== 'undefined'
-    ) {
-        console.log('reload tabid:', id, changeInfo, tab);
-        ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
-    }
-});
-
 function context_onclick(info, tab) {
     console.log('context_onclick', info, tab);
     ResolveListener(tab.id, info.linkUrl, info.selectionText, tab, UpdateTabLib);
 }
-
+var onStartupOrOnInstalledListener = function() {
+    console.log("onStartupOrOnInstalledListener");
+    mrc.connect(function() {
+        console.log('mrc connected');
+        mrc.sendMessage({
+            action: 'bt',
+        }, UpdateBtLib);
+    });
+}
+chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
+    if (changeInfo.status == 'loading' && changeInfo.url !== undefined) {
+        console.log('reload tabid:', id, changeInfo, tab);
+        ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
+    }
+});
+chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
+    console.log('onMessage', request);
+    if (request.action == 'tabid') {
+        currenttabid = request.tabid;
+        f_callback({
+            urllib: urllib[request.tabid] || [],
+            btlib: btlib
+        });
+    } else if (request.action == 'play') {
+        console.log('play', request.play);
+        mrc.sendMessage(request);
+    }
+});
 chrome.contextMenus.create({
     title: "send to loadsniffer",
     contexts: ['link', 'video'],
     onclick: context_onclick
 });
-
 chrome.browserAction.setBadgeBackgroundColor({
     color: '#2196F3'
 });
-
-var onStartupOrOnInstalledListener = function() {
-    console.log("onStartupOrOnInstalledListener");
-    mrc.connect();
-}
-
 chrome.runtime.onStartup.addListener(function() {
     onStartupOrOnInstalledListener();
 });
-
 chrome.runtime.onInstalled.addListener(function() {
     onStartupOrOnInstalledListener();
 });
