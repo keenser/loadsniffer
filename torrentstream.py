@@ -29,7 +29,9 @@ class DynamicTorrentProducer(static.StaticProducer):
         buffer = alert.buffer[self.piece.start:self.lastoffset - self.offset]
         self.request.write(buffer)
         self.offset += len(buffer)
+
         if self.offset < self.lastoffset:
+            # move to next piece
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
         #elif self.request:
         #    self.request.unregisterProducer()
@@ -81,8 +83,11 @@ class DynamicTorrentProducer(static.StaticProducer):
                 priority += 1
 
 
+# speedup reading pieces using direct access to file on filesystem
 class StaticTorrentProducer(DynamicTorrentProducer):
     def read_piece(self):
+        # probably file exsists on filesystem because have_piece()==True success check
+        # now we can open it
         if not hasattr(self, 'fileObject') or self.fileObject.closed:
             self.fileObject = open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb')
             self.fileObject.seek(self.offset)
@@ -91,7 +96,9 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         if data:
             self.offset += len(data)
             self.request.write(data)
+
         if self.offset < self.lastoffset:
+            # move to next piece
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
 
     def stopProducing(self):
