@@ -1,4 +1,11 @@
 var tabid = null ;
+function copyToClipboard(str) {
+    document.oncopy = function(event) {
+        event.clipboardData.setData('text/plain', str);
+        event.preventDefault();
+    }
+    document.execCommand("Copy", false, null );
+}
 var addSingleLink = function(line, textcontent, url, title, cookie) {
     var span = document.createElement("span");
     span.textContent = textcontent;
@@ -11,7 +18,8 @@ var addSingleLink = function(line, textcontent, url, title, cookie) {
                 cookie: cookie,
                 url: url
             }
-        })
+        });
+        copyToClipboard(url);
     });
     line.appendChild(span);
 }
