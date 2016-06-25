@@ -189,12 +189,13 @@ class Play(Resource):
 class WS(WebSocketServerProtocol):
     def onOpen(self):
         def upnpupdate(message):
-            self.sendMessage(json.dumps({'action':'upnp', 'upnp':message}))
+            self.sendMessage(json.dumps({'action':'upnpupdate', 'upnpupdate':message}))
 
         def btupdate(alert):
             files = [i for i in alert.files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            self.sendMessage(json.dumps({'action':'bt', 'bt':{'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}}))
+            self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}}))
 
+        # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
         self._btupdate = btupdate
         print "WS client connected", id(self._upnpupdate)
@@ -221,11 +222,11 @@ class WS(WebSocketServerProtocol):
                 upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             upnp.refresh()
-        elif jsondata.get('action') == 'info':
+        elif jsondata.get('action') == 'search':
             uid = jsondata.get('_uid')
-            data = jsondata.get('info')
+            data = jsondata.get('search')
             url = data['url']
-            print "info", url
+            print "search", url
             def jsonsend(message):
                 self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
             def bittorrent(message):
@@ -234,11 +235,15 @@ class WS(WebSocketServerProtocol):
             d = threads.deferToThread(Info.youtube_dl, url)
             d.addCallback(jsonsend)
             d.addErrback(bittorrent)
-        elif jsondata.get('action') == 'bt':
+        elif jsondata.get('action') == 'btstatus':
             uid = jsondata.get('_uid')
             filelist = torrent.list_files()
             files = [i for i in filelist if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
             message = {'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}
+            self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
+        elif jsondata.get('action') == 'upnpstatus':
+            uid = jsondata.get('_uid')
+            message = upnp.device.status
             self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
 
 upnp = UPnPctrl()
