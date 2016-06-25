@@ -48,6 +48,12 @@ var addBt = function(btlib) {
         addLine(container, btlib[i]);
     }
 }
+var UPNPStatus = function(data) {
+    if (data) {
+        var container = document.getElementById("upnp");
+        container.textContent = data.state + ": " + data.item[0].title;
+    }
+}
 chrome.tabs.getSelected(null , function(tab) {
     tabid = tab.id;
     chrome.extension.sendMessage({
@@ -56,6 +62,7 @@ chrome.tabs.getSelected(null , function(tab) {
     }, function(data) {
         addLinks(data.urllib);
         addBt(data.btlib);
+        UPNPStatus(data.upnpstatus);
     });
 });
 chrome.extension.onMessage.addListener(function(request, sender) {
@@ -67,10 +74,9 @@ chrome.extension.onMessage.addListener(function(request, sender) {
             var container = document.getElementById("content");
             container.innerText = '';
         }
-    } else if (request.action === 'upnp') {
-        var container = document.getElementById("upnp");
-        container.textContent = request.upnp.state + ": " + request.upnp.item[0].title;
-    } else if (request.action === 'btlib') {
-        addBt(request.btlib);
+    } else if (request.action === 'upnpstatus') {
+        UPNPStatus(request.upnpstatus);
+    } else if (request.action === 'btstatus') {
+        addBt(request.btstatus);
     }
 });

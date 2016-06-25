@@ -1,5 +1,6 @@
 var urllib = [];
 var btlib = [];
+var upnpstatus = null;
 var currenttabid = null ;
 var mrcurl = "ws://192.168.1.19:8880/ws"
 function MRCServer(url, handler) {
@@ -51,10 +52,10 @@ function MRCServer(url, handler) {
 }
 var mrc = new MRCServer(mrcurl,function(request) {
     console.log("ws request", request);
-    if (request.action == 'bt') {
-        UpdateBtLib(request.bt);
-    } else {
-        chrome.extension.sendMessage(request);
+    if (request.action == 'btupdate') {
+        UpdateBTStatus(request.btupdate);
+    } else if (request.action == 'upnpupdate') {
+        UpdateUPNPStatus(request.upnpupdate);
     }
 }
 );
@@ -93,8 +94,8 @@ var CommonListener = function(tabid, url, title, details, callback) {
 var ResolveListener = function(tabid, url, title, details, callback) {
     console.log("ResolveListener:", tabid, title, url, details);
     mrc.sendMessage({
-        action: 'info',
-        info: {
+        action: 'search',
+        search: {
             url: url
         }
     }, function(data) {
@@ -236,8 +237,8 @@ var MailRuListener = function(tabid, url, title, details, callback) {
         }
     });
 }
-var UpdateBtLib = function(data) {
-    console.log('UpdateBtLib', data);
+var UpdateBTStatus = function(data) {
+    console.log('UpdateBTStatus', data);
     btlib = []
     for (var i = 0; i < data.files.length; i++) {
         btlib.push({
@@ -247,8 +248,17 @@ var UpdateBtLib = function(data) {
         });
     }
     chrome.extension.sendMessage({
-        action: "btlib",
-        btlib: btlib
+        action: "btstatus",
+        btstatus: btlib
+    });
+}
+
+var UpdateUPNPStatus = function(data) {
+    upnpstatus = data;
+    console.log('UpdateUPNPStatus', data);
+    chrome.extension.sendMessage({
+        action: "upnpstatus",
+        upnpstatus: data
     });
 }
 var UpdateTabLib = function(id, data) {
@@ -320,8 +330,11 @@ var onStartupOrOnInstalledListener = function() {
     mrc.connect(function() {
         console.log('mrc connected');
         mrc.sendMessage({
-            action: 'bt',
-        }, UpdateBtLib);
+            action: 'btstatus',
+        }, UpdateBTStatus);
+        mrc.sendMessage({
+            action: 'upnpstatus',
+        }, UpdateUPNPStatus);
     });
 }
 chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
@@ -335,7 +348,8 @@ chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
         currenttabid = request.tabid;
         f_callback({
             urllib: urllib[request.tabid] || [],
-            btlib: btlib
+            btlib: btlib,
+            upnpstatus: upnpstatus
         });
     } else if (request.action == 'play') {
         console.log('play', request.play);
