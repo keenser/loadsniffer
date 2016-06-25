@@ -243,7 +243,7 @@ class WS(WebSocketServerProtocol):
             self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
         elif jsondata.get('action') == 'upnpstatus':
             uid = jsondata.get('_uid')
-            message = upnp.device.status
+            message = upnp.device.status if upnp.device else None
             self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
 
 upnp = UPnPctrl()
