@@ -22,7 +22,7 @@ def printall(*args, **kwargs):
 class MediaDevice(object):
     def __init__(self, device):
         self.media = device
-        self.status = {'state': None, 'item': []}
+        self.status = {'state': None, 'item': [], 'device': device.get_friendly_name()}
 
     def __repr__(self):
         return "{} {} {}".format(device, status)
@@ -51,11 +51,13 @@ class UPnPctrl(object):
                     self.device = list(self.mediadevices.values())[0]
                 else:
                     self.device = None
+                self.trigger_callbacks()
 
     def media_renderer_found(self, device = None):
-        print "media_renderer_found", device.get_usn(), device.get_friendly_name()
         if device is None:
             return
+
+        print "media_renderer_found", device.get_usn(), device.get_friendly_name()
 
         if device.get_device_type().find('MediaRenderer') < 0:
             return
@@ -85,12 +87,12 @@ class UPnPctrl(object):
             d.addCallback(lambda x: play_action.call(InstanceID=0, Speed=1))
             d.addErrback(printall)
 
-    def on_status_change(self, status, callback):
-        if status:
-            self.registered_callbacks[id(callback)] = {'status': status, 'callback': callback}
-            self.trigger_callbacks()
-        else:
-            self.registered_callbacks.pop(id(callback), None)
+    def add_alert_handler(self, callback):
+        self.registered_callbacks[id(callback)] = {'status': None, 'callback': callback}
+        self.trigger_callbacks()
+
+    def remove_alert_handler(self, callback):
+        self.registered_callbacks.pop(id(callback), None)
             
     def state_variable_change(self, variable):
         usn = variable.service.device.get_usn()
@@ -110,13 +112,13 @@ class UPnPctrl(object):
         self.trigger_callbacks()
 
     def trigger_callbacks(self):
-        if self.device:
-            for callback in self.registered_callbacks.values():
-                try:
-                    if callback['status'] != self.device.status:
-                        callback['callback'](self.device.status)
-                except Exception as e:
-                    print "trigger_callbacks exception", e
+        for callback in self.registered_callbacks.values():
+            try:
+                status = self.device.status if self.device is not None else None
+                if callback['status'] != status:
+                    callback['callback'](status)
+            except Exception as e:
+                print "trigger_callbacks exception", e
 
     def refresh(self):
         self.coherence.msearch.double_discover()
@@ -199,12 +201,12 @@ class WS(WebSocketServerProtocol):
         self._upnpupdate = upnpupdate
         self._btupdate = btupdate
         print "WS client connected", id(self._upnpupdate)
-        upnp.on_status_change(True, self._upnpupdate)
+        upnp.add_alert_handler(self._upnpupdate)
         torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self, wasClean, code, reason):
         print "WS client closed", reason , id(self._upnpupdate)
-        upnp.on_status_change(None, self._upnpupdate)
+        upnp.remove_alert_handler(self._upnpupdate)
         torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
     def onMessage(self, payload, isBinary):
