@@ -49,9 +49,15 @@ var addBt = function(btlib) {
     }
 }
 var UPNPStatus = function(data) {
+    var container = document.getElementById("upnp");
     if (data) {
-        var container = document.getElementById("upnp");
-        container.textContent = data.state + ": " + data.item[0].title;
+        var text = data.device + '[' + data.state + ']';
+        if (data.item.length > 0) {
+            text = text + ": " + data.item[0].title;
+        }
+        container.textContent = text;
+    } else {
+                container.textContent = '';
     }
 }
 chrome.tabs.getSelected(null , function(tab) {
