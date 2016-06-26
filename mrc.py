@@ -119,6 +119,7 @@ class UPnPctrl(object):
                 status = self.device.status if self.device is not None else None
                 if callback['status'] != status:
                     callback['callback'](status)
+                    callback['status'] = status
             except Exception as e:
                 print "trigger_callbacks exception", e
 
