@@ -22,7 +22,9 @@ function MRCServer(url, handler) {
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
             if (!doclose) {
-                mrc.connect(opencallback);
+                setTimeout(function(){
+                    mrc.connect(opencallback);
+                }, 2000);
             }
         }
         websocket.onmessage = function(data) {
