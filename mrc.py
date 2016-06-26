@@ -57,10 +57,12 @@ class UPnPctrl(object):
         if device is None:
             return
 
-        print "media_renderer_found", device.get_usn(), device.get_friendly_name()
+        print "found upnp device", device.get_usn(), device.get_friendly_name()
 
         if device.get_device_type().find('MediaRenderer') < 0:
             return
+
+        print "media renderer", device.get_friendly_name()
 
         mediadevice = MediaDevice(device)
         self.mediadevices[device.get_usn()] = mediadevice
