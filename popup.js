@@ -50,15 +50,17 @@ var addBt = function(btlib) {
 }
 var UPNPStatus = function(data) {
     var container = document.getElementById("upnp");
+    var text = '';
     if (data) {
-        var text = data.device + '[' + data.state + ']';
+        text = data.device;
+        if (data.state) {
+            text = text + '[' + data.state + ']';
+        }
         if (data.item.length > 0) {
             text = text + ": " + data.item[0].title;
         }
-        container.textContent = text;
-    } else {
-                container.textContent = '';
     }
+    container.textContent = text;
 }
 chrome.tabs.getSelected(null , function(tab) {
     tabid = tab.id;
