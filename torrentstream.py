@@ -141,7 +141,6 @@ class TorrentStream(static.File):
     NORMAL = 4
     HIGHEST = 7
     def __init__(self, **options):
-        self._torrent_handlers = {}
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
@@ -153,7 +152,6 @@ class TorrentStream(static.File):
                 libtorrent.alert.category_t.storage_notification |
                 libtorrent.alert.category_t.progress_notification |
                 libtorrent.alert.category_t.status_notification |
-                #libtorrent.alert.category_t.peer_notification |
                 libtorrent.alert.category_t.error_notification
                 )
         session.start_dht()
@@ -182,16 +180,10 @@ class TorrentStream(static.File):
 
         def metadata_received_alert(alert):
             print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
-            self._torrent_handlers[str(alert.handle.info_hash())] = alert.handle
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
             self._handle_alert([Files_List_Update_Alert(self.list_files())])
-
-        def torrent_update_alert(alert):
-            handle = self._torrent_handlers.pop(str(alert.old_ih), None)
-            if handle:
-                self._torrent_handlers[str(alert.new_ih)] = handle
 
         def torrent_checked_alert(alert):
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
@@ -203,10 +195,13 @@ class TorrentStream(static.File):
                     del self._files_list[path]
             self._handle_alert([Files_List_Update_Alert(self.list_files())])
 
+        def torrent_error_alert(alert):
+            self.session.remove_torrent(alert.handle)
+
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
-        self.add_alert_handler('torrent_update_alert', torrent_update_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
         self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
+        self.add_alert_handler('torrent_error_alert', torrent_error_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
@@ -251,29 +246,33 @@ class TorrentStream(static.File):
         self.session.async_add_torrent(add_torrent_params)
 
     def remove_torrent(self, info_hash):
-        handle = self._torrent_handlers.pop(info_hash, None)
-        if handle:
-            self.session.remove_torrent(handle, libtorrent.options_t.delete_files)
-            return {'status': '{} removed'.format(info_hash)}
+        try:
+            handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
+            if handle.is_valid():
+                self.session.remove_torrent(handle, libtorrent.options_t.delete_files)
+                return {'status': '{} removed'.format(info_hash)}
+        except TypeError:
+            return {'error': '{} incorrect hash'.format(info_hash)}
         return {'error': '{} not found'.format(info_hash)}
 
     def list_torrents(self):
         data = {}
-        for info_hash, handler in self._torrent_handlers.items():
+        for handle in self.session.get_torrents():
+            info_hash = str(handle.info_hash())
             data[info_hash] = []
-            for file in handler.get_torrent_info().files():
+            for file in handle.get_torrent_info().files():
                 data[info_hash].append(file.path)
         return data
 
     def list_files(self):
-        return self._files_list.keys()
+        return sorted(self._files_list)
 
     def status(self):
         status = {}
         sst = self.session.status()
         status['dht_nodes'] = sst.dht_nodes
-        status['is_dht_running'] = self.session.is_dht_running()
-        for info_hash, handle in self._torrent_handlers.items():
+        for handle in self.session.get_torrents():
+            info_hash = str(handle.info_hash())
             s = {}
             if handle.has_metadata():
                 piece_map = ''
@@ -282,13 +281,12 @@ class TorrentStream(static.File):
                         piece_map += '*'
                     else:
                         piece_map += str(handle.piece_priority(piece_index))
-                s['pm'] = piece_map
+                s['pieces'] = piece_map
                 file_map = ''
                 for file_index in range(handle.get_torrent_info().num_files()):
                     file_map += str(handle.file_priority(file_index))
-                s['fm'] = file_map
-            s['m'] = handle.has_metadata()
-            s['is_paused'] = handle.is_paused()
+                s['files'] = file_map
+            s['has_metadata'] = handle.has_metadata()
             st = handle.status()
             s['paused'] = st.paused
             s['state'] = st.state
@@ -300,7 +298,6 @@ class TorrentStream(static.File):
             s['num_complete'] = st.num_complete
             s['num_peers'] = st.num_peers
             s['num_incomplete'] = st.num_incomplete
-            s['auto_managed'] = st.auto_managed
             s['trackers'] = handle.trackers()
             s['upload_mode'] = st.upload_mode
             status[info_hash] = s
