@@ -44,7 +44,7 @@ var addLinks = function(videoLinks) {
 var addBt = function(btlib) {
     var container = document.getElementById("bt");
     container.style.cursor = 'pointer';
-    for (var i = 0; i < btlib.length; ++i) {
+    for (var i = btlib.length - 1; i >= 0; --i) {
         addLine(container, btlib[i]);
     }
 }
