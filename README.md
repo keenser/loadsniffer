@@ -1,6 +1,27 @@
 # loadsniffer
-Chrome extension to parce media resources on the page using chrome.webRequest or youtube_dl.
-Send it to media renderer using upnp-av.
+Chrome extension communicates with mrc.py over websocket to get media info from url, get and change status of upnp media renderers.
+Also extension tries to find media resources on the page using chrome.webRequest 
+# mrc.py
+Communicates with media renderers on local network using coherence(prefer cohen fork) to send media to them using upnp-av.
+Find media resources from web pages using youtube-dl which can be sended to media renderers.
+Uses torrentstream module to get access to media resources inside torrents.
+Uses websocket(autobahn) to communicate with chrome extension
+# torrentstream.py
+Uses libtorrent and twisted.web to stream files inside torrents over http
+Example:
 
-Extension communicates with mrc.py over websocket(autobahn) to get media info from url, get status from media renderer and send media to it over upnp.
-mrc.py use coherence(prefer cohen fork) to communicate with media renderers.
+   $ torrentstream.py &
+
+   $ curl localhost:8881/bt/add?url=http%3A%2F%2Fwww.frostclick.com%2Ftorrents%2Fvideo%2Fanimation%2FBig_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com.torrent
+
+   {"status": "http://www.frostclick.com/torrents/video/animation/Big_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com.torrent added"}
+
+   $ curl localhost:8881/bt/ls
+
+   ["Big_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com/Big_Buck_Bunny_1080p_surround_FrostWire.com.avi", "Big_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com/PROMOTE_YOUR_CONTENT_ON_FROSTWIRE_01_06_09.txt", "Big_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com/Pressrelease_BickBuckBunny_premiere.pdf", "Big_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com/license.txt"]
+
+   $ wget -O bbb.avi localhost:8881/bt/get?url=Big_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com%2FBig_Buck_Bunny_1080p_surround_FrostWire.com.avi
+
+   $ curl localhost:8881/bt/rm?url=f84b51f0d2c3455ab5dabb6643b4340234cd036e
+   
+   {"status": "f84b51f0d2c3455ab5dabb6643b4340234cd036e removed"}
