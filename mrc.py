@@ -231,7 +231,19 @@ class WS(WebSocketServerProtocol):
             uid = jsondata.get('_uid')
             data = jsondata.get('search')
             url = data['url']
-            print "search", url
+            print 'search', url
+            def jsonsend(message):
+                self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
+            def errorsend(message):
+                self.sendMessage(json.dumps({'_uid': uid, 'data': None}))
+            d = threads.deferToThread(Info.youtube_dl, url)
+            d.addCallback(jsonsend)
+            d.addErrback(errorsend)
+        elif jsondata.get('action') == 'add':
+            uid = jsondata.get('_uid')
+            data = jsondata.get('add')
+            url = data['url']
+            print 'add', url
             def jsonsend(message):
                 self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
             def bittorrent(message):
