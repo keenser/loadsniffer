@@ -1,6 +1,6 @@
 var urllib = [];
 var btlib = [];
-var upnpstatus = null;
+var upnpstatus = null ;
 var currenttabid = null ;
 var mrcurl = "ws://192.168.1.19:8880/ws"
 function MRCServer(url, handler) {
@@ -22,7 +22,7 @@ function MRCServer(url, handler) {
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
             if (!doclose) {
-                setTimeout(function(){
+                setTimeout(function() {
                     mrc.connect(opencallback);
                 }, 2000);
             }
@@ -101,7 +101,6 @@ var ResolveListener = function(tabid, url, title, details, callback) {
             url: url
         }
     }, function(data) {
-        console.log("Resolve", data);
         callback(tabid, data);
     });
 }
@@ -254,7 +253,6 @@ var UpdateBTStatus = function(data) {
         btstatus: btlib
     });
 }
-
 var UpdateUPNPStatus = function(data) {
     upnpstatus = data;
     console.log('UpdateUPNPStatus', data);
@@ -266,6 +264,7 @@ var UpdateUPNPStatus = function(data) {
 var UpdateTabLib = function(id, data) {
     urllib[id] = urllib[id] || []
     if (data !== null ) {
+        console.log('UpdateTabLib', data);
         for (var i = 0; i < urllib[id].length; i++) {
             if (urllib[id][i].url === data.url) {
                 return null ;
@@ -325,7 +324,14 @@ onHeadersReceived(HDSListener, {
 });
 function context_onclick(info, tab) {
     console.log('context_onclick', info, tab);
-    ResolveListener(tab.id, info.linkUrl, info.selectionText, tab, UpdateTabLib);
+    mrc.sendMessage({
+        action: 'add',
+        add: {
+            url: info.linkUrl
+        }
+    }, function(data) {
+        UpdateTabLib(tab.id, data);
+    });
 }
 var onStartupOrOnInstalledListener = function() {
     console.log("onStartupOrOnInstalledListener");
