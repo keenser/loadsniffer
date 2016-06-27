@@ -198,7 +198,7 @@ class WS(WebSocketServerProtocol):
 
         def btupdate(alert):
             files = [i for i in alert.files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}}))
+            self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
 
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
@@ -220,7 +220,7 @@ class WS(WebSocketServerProtocol):
                 print "play url", data.get('url')
                 print "cookie", data.get('cookie')
                 if data.get('cookie'):
-                    url = "http://192.168.1.19:8080/?url={}&cookie={}".format(urllib.quote(data.get('url')), urllib.quote(data.get('cookie')))
+                    url = "http://{}:8080/?url={}&cookie={}".format(self.http_request_host, urllib.quote(data.get('url')), urllib.quote(data.get('cookie')))
                 else:
                     url = data.get('url')
                 print "push to play url:", url
@@ -256,7 +256,7 @@ class WS(WebSocketServerProtocol):
             uid = jsondata.get('_uid')
             filelist = torrent.list_files()
             files = [i for i in filelist if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            message = {'prefix':'http://192.168.1.19:8880/bt/get?url=', 'files':files}
+            message = {'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}
             self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
         elif jsondata.get('action') == 'upnpstatus':
             uid = jsondata.get('_uid')
