@@ -178,6 +178,14 @@ class TorrentStream(static.File):
         encryption_settings.prefer_rc4 = True
         session.set_pe_settings(encryption_settings)
 
+        try:
+            with open("session.state", "rb") as fd:
+                state = libtorrent.bdecode(fd.read())
+        except (IOError, EOFError, RuntimeError) as e:
+            print("Unable to load session.state", e)
+        else:
+            self.session.load_state(state)
+
         def metadata_received_alert(alert):
             print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
             for i in range(alert.handle.get_torrent_info().num_files()):
@@ -198,10 +206,20 @@ class TorrentStream(static.File):
         def torrent_error_alert(alert):
             self.session.remove_torrent(alert.handle)
 
+        def files_list_update_alert(alert):
+            try:
+                with open("session.state", "wb") as fd:
+                    fd.write(libtorrent.bencode(self.session.save_state()))
+                    #fd.flush()
+                    #os.fsync(.fileno())
+            except (IOError, EOFError) as e:
+                print("Unable to save session.state", e)
+
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
         self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
         self.add_alert_handler('torrent_error_alert', torrent_error_alert)
+        self.add_alert_handler('files_list_update_alert', files_list_update_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")

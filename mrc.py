@@ -136,7 +136,7 @@ class JSONEncoder(json.JSONEncoder):
             return json.JSONEncoder.default(self, obj)
 
 import youtube_dl
-#delete generid extractor
+#delete generic extractor
 youtube_dl.extractor._ALL_CLASSES.pop()
 
 class Info(Resource):
