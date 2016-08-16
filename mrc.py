@@ -7,6 +7,8 @@
 from twisted.internet import reactor, threads
 from twisted.web import server
 from twisted.web.resource import Resource
+from twisted.web.client import Agent
+from twisted.web.http_headers import Headers
 from autobahn.twisted.websocket import WebSocketServerFactory, WebSocketServerProtocol
 from autobahn.twisted.resource import WebSocketResource
 from coherence.base import Coherence
@@ -17,7 +19,7 @@ import urllib
 import torrentstream
 
 def printall(*args, **kwargs):
-    print args, kwargs
+    print "printall", args, kwargs
 
 class MediaDevice(object):
     def __init__(self, device):
@@ -73,21 +75,26 @@ class UPnPctrl(object):
         device.client.av_transport.subscribe_for_variable('CurrentTrackMetaData', self.state_variable_change)
         device.client.av_transport.subscribe_for_variable('TransportState', self.state_variable_change)
  
-    def play(self, url, title='Video', vtype='video/avi'):
+    def play(self, url, title='Video', vtype='video/mp4'):
         if self.device:
-            mime = 'http-get:*:%s:*' % vtype
-            res = DIDLLite.Resource(url, mime)
-            item = DIDLLite.VideoItem(None, None, None)
-            item.title = title
-            item.res.append(res)
-            didl = DIDLLite.DIDLElement()
-            didl.addItem(item)
-            service = self.device.media.get_service_by_type('AVTransport')
-            transport_action= service.get_action('SetAVTransportURI')
-            play_action = service.get_action('Play')
-            d = transport_action.call(InstanceID=0, CurrentURI='url', CurrentURIMetaData=didl.toString())
-            d.addCallback(lambda x: play_action.call(InstanceID=0, Speed=1))
-            d.addErrback(printall)
+            def handle_response(response):
+                ctype = response.headers.getRawHeaders('content-type', default=[vtype])[0]
+                mime = 'http-get:*:%s:*' % ctype
+                res = DIDLLite.Resource(url, mime)
+                item = DIDLLite.VideoItem(None, None, None)
+                item.title = title
+                item.res.append(res)
+                didl = DIDLLite.DIDLElement()
+                didl.addItem(item)
+                service = self.device.media.get_service_by_type('AVTransport')
+                transport_action = service.get_action('SetAVTransportURI')
+                play_action = service.get_action('Play')
+                d = transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString())
+                d.addCallback(lambda _: play_action.call(InstanceID=0, Speed=1))
+                d.addErrback(printall)
+            agent = Agent(reactor)
+            d = agent.request('GET', url.encode(), Headers({'range': ['bytes=0-0']}), None)
+            d.addCallback(handle_response)
 
     def add_alert_handler(self, callback):
         self.registered_callbacks[id(callback)] = {'status': None, 'callback': callback}
@@ -119,7 +126,10 @@ class UPnPctrl(object):
                 status = self.device.status if self.device is not None else None
                 if callback['status'] != status:
                     callback['callback'](status)
-                    callback['status'] = status.copy()
+                    if status:
+                        callback['status'] = status.copy()
+                    else:
+                        callback['status'] = status
             except Exception as e:
                 print "trigger_callbacks exception", e
 

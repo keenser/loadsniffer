@@ -16,6 +16,7 @@ FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
 class DynamicTorrentProducer(static.StaticProducer):
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
+        print("DynamicTorrentProducer", offset, size)
         self.stream = stream
         self.request = request
         self.fileinfo = fileinfo
@@ -103,7 +104,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
     def stopProducing(self):
         super(StaticTorrentProducer, self).stopProducing()
-        self.fileObject.close()
+        if hasattr(self, 'fileObject') and not self.fileObject.closed:
+            self.fileObject.close()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
