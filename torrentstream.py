@@ -33,7 +33,7 @@ class DynamicTorrentProducer(static.StaticProducer):
 
         if self.offset < self.lastoffset:
             # move to next piece
-            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
+            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
         #elif self.request:
         #    self.request.unregisterProducer()
         #    self.request.finish()
@@ -41,7 +41,7 @@ class DynamicTorrentProducer(static.StaticProducer):
 
     def piece_finished_alert(self, alert):
         print("piece_finished_alert", alert.message())
-        if alert.piece_index == self.priority_window:
+        if self.fileinfo.handle.have_piece(self.priority_window):
             self.slide()
 
     def resumeProducing(self):
@@ -56,9 +56,10 @@ class DynamicTorrentProducer(static.StaticProducer):
     def start(self):
         self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
-        self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
-        self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, self.size)
+        self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
+        self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
         self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
+        print("start", self.piece.piece, self.lastpiece.piece, self.piecelength)
 
         # priority window size 4Mb * 8
         priorityblock = (4 * 1024 * 1024 )/ self.piecelength
@@ -76,9 +77,10 @@ class DynamicTorrentProducer(static.StaticProducer):
         # find next missing piece from current piece offset
         while self.fileinfo.handle.have_piece(self.priority_window) and self.priority_window <= self.lastpiece.piece:
             self.priority_window += 1
-        print("priority_window", self.priority_window)
+        print("priority_window", self.priority_window, self.lastpiece.piece)
         if self.priority_window <= self.lastpiece.piece:
             priority = 0
+            print("priority", priority, range(self.priority_window, min(self.lastpiece.piece + 1, self.priority_window + len(self.prioritymask))))
             for window in range(self.priority_window, min(self.lastpiece.piece + 1, self.priority_window + len(self.prioritymask))):
                 self.fileinfo.handle.piece_priority(window, self.prioritymask[priority])
                 priority += 1
@@ -100,7 +102,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
         if self.offset < self.lastoffset:
             # move to next piece
-            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, self.size)
+            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
 
     def stopProducing(self):
         super(StaticTorrentProducer, self).stopProducing()
@@ -117,7 +119,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
     def piece_finished_alert(self, alert):
         print("piece_finished_alert", alert.message())
         self.resumeProducing()
-        if alert.piece_index == self.priority_window:
+        if self.fileinfo.handle.have_piece(self.priority_window):
             self.slide()
 
 
@@ -162,13 +164,13 @@ class TorrentStream(static.File):
         session.start_natpmp()
         session.listen_on(options.get('min_port', 6881), options.get('max_port', 6889))
 
-        session_settings = session.settings()
-        session_settings.strict_end_game_mode = False
-        session_settings.announce_to_all_tiers = True
-        session_settings.announce_to_all_trackers = True
-        session_settings.low_prio_disk = False
-        session_settings.use_disk_cache_pool = True
-        session.set_settings(session_settings)
+        #session_settings = session.settings()
+        #session_settings.strict_end_game_mode = False
+        #session_settings.announce_to_all_tiers = True
+        #session_settings.announce_to_all_trackers = True
+        #session_settings.low_prio_disk = False
+        #session_settings.use_disk_cache_pool = True
+        #session.set_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
         session.add_dht_router("router.utorrent.com", 6881)

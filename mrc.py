@@ -79,6 +79,7 @@ class UPnPctrl(object):
         if self.device:
             def handle_response(response):
                 ctype = response.headers.getRawHeaders('content-type', default=[vtype])[0]
+                print "type", ctype
                 mime = 'http-get:*:%s:*' % ctype
                 res = DIDLLite.Resource(url, mime)
                 item = DIDLLite.VideoItem(None, None, None)
@@ -88,8 +89,10 @@ class UPnPctrl(object):
                 didl.addItem(item)
                 service = self.device.media.get_service_by_type('AVTransport')
                 transport_action = service.get_action('SetAVTransportURI')
+                stop_action = service.get_action('Stop')
                 play_action = service.get_action('Play')
-                d = transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString())
+                d = stop_action.call(InstanceID=0)
+                d.addCallback(lambda _: transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString()))
                 d.addCallback(lambda _: play_action.call(InstanceID=0, Speed=1))
                 d.addErrback(printall)
             agent = Agent(reactor)
@@ -208,7 +211,14 @@ class WS(WebSocketServerProtocol):
 
         def btupdate(alert):
             files = [i for i in alert.files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
+            #self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
+            self.sendMessage(json.dumps(
+              {'action':'btupdate',
+                'btupdate':{
+                  'prefix':'http://{}:{}/bt/get?url='.format(self.http_request_host, '8880'),
+                  'files':files
+                }
+              }))
 
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
@@ -218,11 +228,14 @@ class WS(WebSocketServerProtocol):
         torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self, wasClean, code, reason):
-        print "WS client closed", reason , id(self._upnpupdate)
-        upnp.remove_alert_handler(self._upnpupdate)
-        torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
+        if hasattr(self, '_upnpupdate'):
+            print "WS client closed", reason , id(self._upnpupdate)
+            upnp.remove_alert_handler(self._upnpupdate)
+        if hasattr(self, '_btupdate'):
+            torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
     def onMessage(self, payload, isBinary):
+        print "WS onMessage", payload
         jsondata = json.loads(payload)
         if jsondata.get('action') == 'play':
             data = jsondata['play']
@@ -266,7 +279,8 @@ class WS(WebSocketServerProtocol):
             uid = jsondata.get('_uid')
             filelist = torrent.list_files()
             files = [i for i in filelist if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            message = {'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}
+            #message = {'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}
+            message = {'prefix':'http://{}:{}/bt/get?url='.format(self.http_request_host, '8880'), 'files':files}
             self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
         elif jsondata.get('action') == 'upnpstatus':
             uid = jsondata.get('_uid')
@@ -283,7 +297,8 @@ def start():
     root.putChild("bt", torrent)
     ws = WebSocketServerFactory()
     ws.protocol = WS
-    root.putChild("ws", WebSocketResource(ws))
+    reactor.listenTCP(8881, ws)
+#    root.putChild("ws", WebSocketResource(ws))
 
     site = server.Site(root)
     reactor.listenTCP(8880, site)
