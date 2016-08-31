@@ -80,7 +80,7 @@ class UPnPctrl(object):
             def handle_response(response):
                 ctype = response.headers.getRawHeaders('content-type', default=[vtype])[0]
                 print "type", ctype
-                mime = 'http-get:*:%s:*' % ctype
+                mime = 'http-get:*:%s:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000' % ctype
                 res = DIDLLite.Resource(url, mime)
                 item = DIDLLite.VideoItem(None, None, None)
                 item.title = title
@@ -205,25 +205,30 @@ class Play(Resource):
         return "no 'url' parameter pecified"
 
 class WS(WebSocketServerProtocol):
+    def btfileslist(self, infiles):
+        import socket
+        files = [i for i in infiles if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
+        #self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
+        return {
+                 'prefix':'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880'),
+                 'files':files
+               }
+
     def onOpen(self):
         def upnpupdate(message):
             self.sendMessage(json.dumps({'action':'upnpupdate', 'upnpupdate':message}))
 
         def btupdate(alert):
             files = [i for i in alert.files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            #self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
             self.sendMessage(json.dumps(
               {'action':'btupdate',
-                'btupdate':{
-                  'prefix':'http://{}:{}/bt/get?url='.format(self.http_request_host, '8880'),
-                  'files':files
-                }
+                'btupdate': self.btfileslist(alert.files)
               }))
 
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
         self._btupdate = btupdate
-        print "WS client connected", id(self._upnpupdate)
+        print "WS client connected", self.peer
         upnp.add_alert_handler(self._upnpupdate)
         torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
@@ -277,11 +282,11 @@ class WS(WebSocketServerProtocol):
             d.addErrback(bittorrent)
         elif jsondata.get('action') == 'btstatus':
             uid = jsondata.get('_uid')
-            filelist = torrent.list_files()
-            files = [i for i in filelist if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
-            #message = {'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}
-            message = {'prefix':'http://{}:{}/bt/get?url='.format(self.http_request_host, '8880'), 'files':files}
-            self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
+            self.sendMessage(json.dumps(
+              {
+                '_uid': uid,
+                'data': self.btfileslist(torrent.list_files())
+              }))
         elif jsondata.get('action') == 'upnpstatus':
             uid = jsondata.get('_uid')
             message = upnp.device.status if upnp.device else None
