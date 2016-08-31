@@ -2,7 +2,7 @@ var urllib = [];
 var btlib = [];
 var upnpstatus = null ;
 var currenttabid = null ;
-var mrcurl = "ws://192.168.1.19:8880/ws"
+var mrcurl = "ws://nuc.grsk.eu.org:8881"
 function MRCServer(url, handler) {
     var mrc = {};
     var doclose = false;
