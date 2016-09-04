@@ -92,7 +92,7 @@ class UPnPctrl(object):
                 stop_action = service.get_action('Stop')
                 play_action = service.get_action('Play')
                 d = stop_action.call(InstanceID=0)
-                d.addCallback(lambda _: transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString()))
+                d.addBoth(lambda _: transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString()))
                 d.addCallback(lambda _: play_action.call(InstanceID=0, Speed=1))
                 d.addErrback(printall)
             agent = Agent(reactor)

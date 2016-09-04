@@ -185,6 +185,8 @@ class TorrentStream(static.File):
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
+
+        print("libtorrent", libtorrent.version)
         self.session = session = libtorrent.session()
         reactor.callInThread(self._alert_queue_loop)
 
