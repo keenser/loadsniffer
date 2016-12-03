@@ -96,7 +96,8 @@ class UPnPctrl(object):
                 d.addCallback(lambda _: play_action.call(InstanceID=0, Speed=1))
                 d.addErrback(printall)
             agent = Agent(reactor)
-            d = agent.request('GET', url.encode(), Headers({'range': ['bytes=0-0']}), None)
+            #d = agent.request('GET', url.encode(), Headers({'range': ['bytes=0-0']}), None)
+            d = agent.request('HEAD', url.encode(), None)
             d.addCallback(handle_response)
 
     def add_alert_handler(self, callback):

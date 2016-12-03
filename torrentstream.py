@@ -10,6 +10,7 @@ from twisted.internet import reactor
 from twisted.web import server, static, http
 from twisted.web.resource import Resource
 from collections import namedtuple
+import gc
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
@@ -51,6 +52,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         if self.fileinfo.handle.have_piece(self.priority_window):
             self.slide()
         self.resumeProducing()
+        self.fileinfo.handle.flush_cache()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
@@ -83,6 +85,8 @@ class DynamicTorrentProducer(static.StaticProducer):
             priorityblock = 1
         self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
         print("prioritymask", self.prioritymask)
+
+        self.fileinfo.handle.resume()
         self.slide(self.piece.piece)
 
         self.request.registerProducer(self, 0)
@@ -106,7 +110,7 @@ class DynamicTorrentProducer(static.StaticProducer):
 
 # speedup reading pieces using direct access to file on filesystem
 class StaticTorrentProducer(DynamicTorrentProducer):
-    def read_piece(self):
+    def read_piece_1(self):
         with open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb') as fileObject:
             fileObject.seek(self.offset)
             data = fileObject.read(self.piecelength - self.piece.start)
@@ -121,7 +125,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
                 self.request.finish()
                 self.stopProducing()
         
-    def read_piece_2(self):
+    def read_piece(self):
         # probably file exsists on filesystem because have_piece()==True success check
         # now we can open it
         if not hasattr(self, 'fileObject') or self.fileObject.closed:
@@ -133,6 +137,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         if data:
             self.offset += len(data)
             self.request.write(data)
+        del data
 
         if self.offset < self.lastoffset:
             # move to next piece
@@ -142,10 +147,10 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             self.request.finish()
             self.stopProducing()
 
-    #def stopProducing(self):
-    #    super(StaticTorrentProducer, self).stopProducing()
-    #    if hasattr(self, 'fileObject') and not self.fileObject.closed:
-    #        self.fileObject.close()
+    def stopProducing(self):
+        if hasattr(self, 'fileObject') and not self.fileObject.closed:
+            self.fileObject.close()
+        super(StaticTorrentProducer, self).stopProducing()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
@@ -161,7 +166,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             self.slide()
 
 
-class TorrentProducer(DynamicTorrentProducer):
+class TorrentProducer(StaticTorrentProducer):
     pass
 
 
@@ -186,6 +191,7 @@ class TorrentStream(static.File):
         self._files_list = {}
         self.options = options
 
+        #gc.set_debug(gc.DEBUG_LEAK)
         print("libtorrent", libtorrent.version)
         self.session = session = libtorrent.session()
         reactor.callInThread(self._alert_queue_loop)
@@ -207,8 +213,14 @@ class TorrentStream(static.File):
         session_settings.strict_end_game_mode = False
         session_settings.announce_to_all_tiers = True
         session_settings.announce_to_all_trackers = True
-        session_settings.low_prio_disk = False
-        session_settings.use_disk_cache_pool = True
+        #session_settings.low_prio_disk = False
+        #session_settings.use_disk_cache_pool = False
+        session_settings.cache_size = 0
+        session_settings.use_read_cache = False
+        #session_settings.cache_expiry = 1
+        #session_settings.guided_read_cache = False
+        #ession_settings.volatile_read_cache = False
+        #session_settings.contiguous_recv_buffer = False
         session.set_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
@@ -264,18 +276,21 @@ class TorrentStream(static.File):
             except (IOError, EOFError) as e:
                 print("Unable to save session.state", e)
 
+        def cache_flushed_alert(alert):
+            gc.collect()
+
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
         self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
         self.add_alert_handler('torrent_error_alert', torrent_error_alert)
         self.add_alert_handler('files_list_update_alert', files_list_update_alert)
+        self.add_alert_handler('cache_flushed_alert', cache_flushed_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
         while reactor.running:
-            if not self.session.wait_for_alert(5000):
-                continue
-            reactor.callLater(0, self._handle_alert, self.session.pop_alerts())
+            if self.session.wait_for_alert(5000):
+                reactor.callLater(0, self._handle_alert, self.session.pop_alerts())
 
     def _handle_alert(self, alerts):
         for alert in alerts:
@@ -288,6 +303,8 @@ class TorrentStream(static.File):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
                 for handler in self._alert_handlers.get(what, []):
                     handler(alert)
+            #if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
+                #print('-{0}: {1}'.format(alert.what(), alert.message()))
 
     def add_alert_handler(self, alert, handler, handle=None):
         if handle:
@@ -322,6 +339,26 @@ class TorrentStream(static.File):
             return {'error': '{} incorrect hash'.format(info_hash)}
         return {'error': '{} not found'.format(info_hash)}
 
+    def pause_torrent(self, info_hash):
+        try:
+            handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
+            if handle.is_valid():
+                handle.pause()
+                return {'status': '{} paused'.format(info_hash)}
+        except TypeError:
+            return {'error': '{} incorrect hash'.format(info_hash)}
+        return {'error': '{} not found'.format(info_hash)}
+
+    def flush_torrent(self):
+        try:
+            for handle in self.session.get_torrents():
+                if handle.is_valid():
+                    handle.flush_cache()
+            return {'status': 'flushed'}
+        except TypeError:
+            return {'error': 'incorrect hash'}
+        return {'error': 'not found'}
+
     def list_torrents(self):
         data = {}
         for handle in self.session.get_torrents():
@@ -338,6 +375,12 @@ class TorrentStream(static.File):
         status = {}
         sst = self.session.status()
         status['dht_nodes'] = sst.dht_nodes
+        cst = self.session.get_cache_status()
+        status['cache_size'] = cst.cache_size
+        status['reads'] = cst.reads
+        status['writes'] = cst.writes
+        #status['write_cache_size'] = cst.write_cache_size
+        status['read_cache_size'] = cst.read_cache_size
         for handle in self.session.get_torrents():
             info_hash = str(handle.info_hash())
             s = {}
@@ -400,7 +443,19 @@ class TorrentStream(static.File):
     def render_GET(self, request):
         url = request.args.get('url',[None])[0]
         ret = None
-        if request.postpath[0] == 'add' and url:
+
+        def help():
+            prepath = '{}:{}/{}'.format(request.host.host, request.host.port, '/'.join(request.prepath))
+            return {'example': [ '{p}/add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
+                                '{p}/get?url=file.avi'.format(p=prepath),
+                                '{p}/rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
+                                '{p}/info'.format(p=prepath),
+                                '{p}/ls'.format(p=prepath)
+                              ]}
+
+        if len(request.postpath) == 0:
+            ret = help()
+        elif request.postpath[0] == 'add' and url:
             self.add_torrent(url)
             ret = {'status': '{} added'.format(url)}
         elif request.postpath[0] == 'info':
@@ -428,16 +483,13 @@ class TorrentStream(static.File):
                 return server.NOT_DONE_YET
         elif request.postpath[0] == 'rm' and url:
             ret = self.remove_torrent(url)
+        elif request.postpath[0] == 'pause' and url:
+            ret = self.pause_torrent(url)
+        elif request.postpath[0] == 'flush':
+            ret = self.flush_torrent()
         else:
-            prepath = '{}:{}/{}'.format(request.host.host, request.host.port, '/'.join(request.prepath))
-            ret = {'example': [ '{p}/add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
-                                '{p}/get?url=file.avi'.format(p=prepath),
-                                '{p}/rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
-                                '{p}/info'.format(p=prepath),
-                                '{p}/ls'.format(p=prepath)
-                              ]}
-
-        return json.dumps(ret)
+            ret = help()
+        return json.dumps(ret)+'\n'
 
     render_HEAD = render_GET
 
@@ -449,7 +501,7 @@ def main():
     #torrentstream = TorrentStream()
     root.putChild("bt", torrentstream)
     site = server.Site(root)
-    reactor.listenTCP(8881, site)
+    reactor.listenTCP(8882, site)
 
 if __name__ == '__main__':
     reactor.callWhenRunning(main)
