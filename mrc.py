@@ -206,9 +206,13 @@ class Play(Resource):
         return "no 'url' parameter pecified"
 
 class WS(WebSocketServerProtocol):
+    @staticmethod
+    def videofiles(files):
+        return [i for i in files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi') or i.endswith('.m4v')]
+
     def btfileslist(self, infiles):
         import socket
-        files = [i for i in infiles if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
+        files = self.videofiles(infiles)
         #self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
         return {
                  'prefix':'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880'),
@@ -220,7 +224,7 @@ class WS(WebSocketServerProtocol):
             self.sendMessage(json.dumps({'action':'upnpupdate', 'upnpupdate':message}))
 
         def btupdate(alert):
-            files = [i for i in alert.files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi')]
+            files = self.videofiles(alert.files)
             self.sendMessage(json.dumps(
               {'action':'btupdate',
                 'btupdate': self.btfileslist(alert.files)

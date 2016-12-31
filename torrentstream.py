@@ -26,6 +26,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         self.lastoffset = self.offset + self.size
         self.priority_window = None
         self.buffer = {}
+        self.cansend = True
 
     def read_piece_alert(self, alert):
         print("read_piece_alert", alert.piece, alert.size)
@@ -51,8 +52,8 @@ class DynamicTorrentProducer(static.StaticProducer):
         print("piece_finished_alert", alert.message())
         if self.fileinfo.handle.have_piece(self.priority_window):
             self.slide()
-        self.resumeProducing()
-        self.fileinfo.handle.flush_cache()
+        if self.cansend:
+            self.resumeProducing()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
@@ -62,7 +63,10 @@ class DynamicTorrentProducer(static.StaticProducer):
                 self.fileinfo.handle.read_piece(window)
                 #self.fileinfo.handle.set_piece_deadline(window, 0, libtorrent.deadline_flags.alert_when_available)
         if self.piece.piece in self.buffer and self.buffer[self.piece.piece]:
+            self.cansend = False
             self.read_piece()
+        else:
+            self.cansend = True
         #self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0, libtorrent.deadline_flags.alert_when_available)
 
     def stopProducing(self):
@@ -155,13 +159,16 @@ class StaticTorrentProducer(DynamicTorrentProducer):
     def resumeProducing(self):
         print("index", self.piece.piece)
         if self.fileinfo.handle.have_piece(self.piece.piece):
+            self.cansend = False
             self.read_piece()
         else:
+            self.cansend = True
             self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0)
 
     def piece_finished_alert(self, alert):
         print("piece_finished_alert", alert.message())
-        self.resumeProducing()
+        if self.cansend:
+            self.resumeProducing()
         if self.fileinfo.handle.have_piece(self.priority_window):
             self.slide()
 
@@ -191,7 +198,6 @@ class TorrentStream(static.File):
         self._files_list = {}
         self.options = options
 
-        #gc.set_debug(gc.DEBUG_LEAK)
         print("libtorrent", libtorrent.version)
         self.session = session = libtorrent.session()
         reactor.callInThread(self._alert_queue_loop)
@@ -213,20 +219,10 @@ class TorrentStream(static.File):
         session_settings.strict_end_game_mode = False
         session_settings.announce_to_all_tiers = True
         session_settings.announce_to_all_trackers = True
-        #session_settings.low_prio_disk = False
-        #session_settings.use_disk_cache_pool = False
-        session_settings.cache_size = 0
-        session_settings.use_read_cache = False
-        #session_settings.cache_expiry = 1
-        #session_settings.guided_read_cache = False
-        #ession_settings.volatile_read_cache = False
-        #session_settings.contiguous_recv_buffer = False
         session.set_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
         session.add_dht_router("router.utorrent.com", 6881)
-
-        #session.set_download_rate_limit(10 * 1024 * 1024 / 8)
 
         encryption_settings = libtorrent.pe_settings()
         encryption_settings.out_enc_policy = libtorrent.enc_policy(libtorrent.enc_policy.forced)
@@ -244,7 +240,6 @@ class TorrentStream(static.File):
             self.session.load_state(state)
 
         def torrent_checked_alert(alert):
-            #alert.handle.set_download_limit(10 * 1024 * 1024 / 8)
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
 
         #def metadata_received_alert(alert):
@@ -354,6 +349,7 @@ class TorrentStream(static.File):
             for handle in self.session.get_torrents():
                 if handle.is_valid():
                     handle.flush_cache()
+            gc.collect()
             return {'status': 'flushed'}
         except TypeError:
             return {'error': 'incorrect hash'}
@@ -416,29 +412,27 @@ class TorrentStream(static.File):
     def getFileSize(self):
         return self.fileForReading.info.size
 
-    def makeProducer(self, request, fileForReading):
+    def makeProducer(self, request):
         byteRange = request.getHeader(b'range')
         if byteRange is None:
             self._setContentHeaders(request)
             request.setResponseCode(http.OK)
-            return TorrentProducer(self, request, fileForReading)
+            return 0, None
         try:
             parsedRanges = self._parseRangeHeader(byteRange)
         except ValueError:
             self._setContentHeaders(request)
             request.setResponseCode(http.OK)
-            return TorrentProducer(self, request, fileForReading)
+            return 0, None
 
         if len(parsedRanges) == 1:
             offset, size = self._doSingleRangeRequest(
                 request, parsedRanges[0])
             self._setContentHeaders(request, size)
-            return TorrentProducer(
-                self, request, fileForReading, offset, size)
+            return offset, size
         else:
             rangeInfo = self._doMultipleRangeRequest(request, parsedRanges)
-            return TorrentProducer(
-                self, request, fileForReading, rangeInfo)
+            return rangeInfo, None
 
     def render_GET(self, request):
         url = request.args.get('url',[None])[0]
@@ -474,11 +468,12 @@ class TorrentStream(static.File):
                 request.setHeader('accept-ranges', 'bytes')
 
                 self.fileForReading = self._files_list[url]
-                producer = self.makeProducer(request, self.fileForReading)
+                offset, size = self.makeProducer(request)
 
                 if request.method == 'HEAD':
                     return ''
 
+                producer = TorrentProducer(self, request, self.fileForReading, offset, size)
                 producer.start()
                 return server.NOT_DONE_YET
         elif request.postpath[0] == 'rm' and url:
