@@ -6,7 +6,9 @@
 
 import libtorrent
 import json
-from twisted.internet import reactor
+import glob
+import os
+from twisted.internet import reactor, defer
 from twisted.web import server, static, http
 from twisted.web.resource import Resource
 from collections import namedtuple
@@ -169,8 +171,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         print("piece_finished_alert", alert.message())
         if self.cansend:
             self.resumeProducing()
-        if self.fileinfo.handle.have_piece(self.priority_window):
-            self.slide()
+        #if self.fileinfo.handle.have_piece(self.priority_window):
+        self.slide()
 
 
 class TorrentProducer(StaticTorrentProducer):
@@ -197,9 +199,11 @@ class TorrentStream(static.File):
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
+        self.options.setdefault('save_path', '/tmp/')
 
         print("libtorrent", libtorrent.version)
         self.session = session = libtorrent.session()
+        #reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
         reactor.callInThread(self._alert_queue_loop)
 
         session.set_alert_mask(
@@ -231,13 +235,21 @@ class TorrentStream(static.File):
         encryption_settings.prefer_rc4 = True
         session.set_pe_settings(encryption_settings)
 
-        try:
-            with open("session.state", "rb") as fd:
-                state = libtorrent.bdecode(fd.read())
-        except (IOError, EOFError, RuntimeError) as e:
-            print("Unable to load session.state", e)
-        else:
-            self.session.load_state(state)
+        #try:
+        #    with open("session.state", 'rb') as fd:
+        #        state = libtorrent.bdecode(fd.read())
+        #except (IOError, EOFError, RuntimeError) as e:
+        #    print("Unable to load session.state", e)
+        #else:
+        #    self.session.load_state(state)
+
+        for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
+            try:
+                if os.path.exists(file):
+                    with open(file, 'rb') as fd:
+                        self.add_torrent(resume_data = fd.read())
+            except (IOError, EOFError, RuntimeError) as e:
+                print("Unable to load fastresume", e)
 
         def torrent_checked_alert(alert):
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
@@ -262,24 +274,42 @@ class TorrentStream(static.File):
         def torrent_error_alert(alert):
             self.session.remove_torrent(alert.handle)
 
-        def files_list_update_alert(alert):
-            try:
-                with open("session.state", "wb") as fd:
-                    fd.write(libtorrent.bencode(self.session.save_state()))
-                    #fd.flush()
-                    #os.fsync(.fileno())
-            except (IOError, EOFError) as e:
-                print("Unable to save session.state", e)
+        #def files_list_update_alert(alert):
+        #    try:
+        #        with open("session.state", 'wb') as fd:
+        #            fd.write(libtorrent.bencode(self.session.save_state()))
+        #            #fd.flush()
+        #            #os.fsync(.fileno())
+        #    except (IOError, EOFError) as e:
+        #        print("Unable to save session.state", e)
 
-        def cache_flushed_alert(alert):
-            gc.collect()
+        #def cache_flushed_alert(alert):
+        #    for handle in self.session.get_torrents():
+        #        self.save_resume_data(handle)
+        #    gc.collect()
+
+        def torrent_finished_alert(alert):
+            self.save_resume_data(alert.handle)
+
+        def save_resume_data_alert(alert):
+            print("save_resume_data_alert", alert.handle.get_torrent_info().name())
+            try:
+                resume_data = dict(alert.resume_data)
+                resume_data.pop('piece_priority', None)
+                resume_data.pop('unfinished', None)
+                with open(alert.handle.save_path() + "/" + alert.handle.get_torrent_info().name() + ".fastresume", 'wb') as fd:
+                    fd.write(libtorrent.bencode(resume_data))
+            except (IOError, EOFError) as e:
+                print("Unable to save fastresume", e)
 
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
         self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
         self.add_alert_handler('torrent_error_alert', torrent_error_alert)
-        self.add_alert_handler('files_list_update_alert', files_list_update_alert)
-        self.add_alert_handler('cache_flushed_alert', cache_flushed_alert)
+        #self.add_alert_handler('files_list_update_alert', files_list_update_alert)
+        #self.add_alert_handler('cache_flushed_alert', cache_flushed_alert)
+        self.add_alert_handler('torrent_finished_alert', torrent_finished_alert)
+        self.add_alert_handler('save_resume_data_alert', save_resume_data_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
@@ -298,9 +328,11 @@ class TorrentStream(static.File):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
                 for handler in self._alert_handlers.get(what, []):
                     handler(alert)
-            #if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
-                #print('-{0}: {1}'.format(alert.what(), alert.message()))
 
+    def save_resume_data(self, handle):
+        if handle.is_valid() and handle.has_metadata() and handle.need_save_resume_data():
+            handle.save_resume_data(2)
+ 
     def add_alert_handler(self, alert, handler, handle=None):
         if handle:
             alert = str(handle.info_hash()) + ':' + alert
@@ -315,9 +347,12 @@ class TorrentStream(static.File):
             if not self._alert_handlers[alert]:
                 self._alert_handlers.pop(alert)
 
-    def add_torrent(self, url):
+    def add_torrent(self, url = None, resume_data = None):
         add_torrent_params = {}
-        add_torrent_params['url'] = url
+        if resume_data:
+            add_torrent_params['resume_data'] = resume_data
+        if url:
+            add_torrent_params['url'] = url
         add_torrent_params['save_path'] = self.options.get('save_path', '/tmp/')
         add_torrent_params['storage_mode'] = libtorrent.storage_mode_t.storage_mode_sparse
         add_torrent_params['auto_managed'] = False
@@ -328,6 +363,9 @@ class TorrentStream(static.File):
         try:
             handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
             if handle.is_valid():
+                fastresume = handle.save_path() + "/" + handle.get_torrent_info().name() + '.fastresume'
+                if os.path.exists(fastresume):
+                    os.remove(fastresume)
                 self.session.remove_torrent(handle, libtorrent.options_t.delete_files)
                 return {'status': '{} removed'.format(info_hash)}
         except TypeError:
@@ -338,8 +376,12 @@ class TorrentStream(static.File):
         try:
             handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
             if handle.is_valid():
-                handle.pause()
-                return {'status': '{} paused'.format(info_hash)}
+                if handle.status().paused:
+                    handle.resume()
+                    return {'status': '{} resumed'.format(info_hash)}
+                else:
+                    handle.pause()
+                    return {'status': '{} paused'.format(info_hash)}
         except TypeError:
             return {'error': '{} incorrect hash'.format(info_hash)}
         return {'error': '{} not found'.format(info_hash)}
@@ -408,6 +450,33 @@ class TorrentStream(static.File):
             s['upload_mode'] = st.upload_mode
             status[info_hash] = s
         return status
+
+    @defer.inlineCallbacks
+    def shutdown(self):
+        outstanding_resume_data = 0
+        for handle in self.session.get_torrents():
+            print("check", handle.get_torrent_info().name(), handle.is_valid(), handle.has_metadata(), handle.need_save_resume_data())
+            if not handle.is_valid():
+                continue
+            if not handle.has_metadata():
+                continue
+            if not handle.need_save_resume_data():
+                continue
+            handle.save_resume_data()
+            outstanding_resume_data += 1
+
+        if outstanding_resume_data:
+            print("outstanding_resume_data", outstanding_resume_data)
+            lock = defer.DeferredLock()
+            def save_resume_data_alert(alert):
+                print("name", alert.handle.get_torrent_info().name())
+                outstanding_resume_data -= 1
+                if not outstanding_resume_data:
+                    lock.release()
+
+            self.add_alert_handler('save_resume_data_alert', save_resume_data_alert)
+            yield lock.acquire()
+        print("torrentstream shutdown")
 
     def getFileSize(self):
         return self.fileForReading.info.size
