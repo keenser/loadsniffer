@@ -331,7 +331,10 @@ class TorrentStream(static.File):
 
     def save_resume_data(self, handle):
         if handle.is_valid() and handle.has_metadata() and handle.need_save_resume_data():
-            handle.save_resume_data(2)
+            # flush_disk_cache
+            # save_info_dict
+            # only_if_modified
+            handle.save_resume_data(libtorrent.save_resume_flags_t.flush_disk_cache<<1 | libtorrent.save_resume_flags_t.flush_disk_cache<<2)
  
     def add_alert_handler(self, alert, handler, handle=None):
         if handle:
@@ -478,6 +481,13 @@ class TorrentStream(static.File):
             yield lock.acquire()
         print("torrentstream shutdown")
 
+    @staticmethod
+    def getTypeAndEncoding(url):
+        return static.getTypeAndEncoding(url,
+                                        static.File.contentTypes,
+                                        static.File.contentEncodings,
+                                              "text/html")
+
     def getFileSize(self):
         return self.fileForReading.info.size
 
@@ -529,10 +539,7 @@ class TorrentStream(static.File):
             if url not in self.list_files():
                 ret = {'error': '{} not found'.format(url)}
             else:
-                self.type, self.encoding = static.getTypeAndEncoding(url,
-                                              self.contentTypes,
-                                              self.contentEncodings,
-                                              "text/html")
+                self.type, self.encoding = self.getTypeAndEncoding(url)
 
                 request.setHeader('accept-ranges', 'bytes')
 

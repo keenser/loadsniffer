@@ -96,7 +96,6 @@ class UPnPctrl(object):
                 d.addCallback(lambda _: play_action.call(InstanceID=0, Speed=1))
                 d.addErrback(printall)
             agent = Agent(reactor)
-            #d = agent.request('GET', url.encode(), Headers({'range': ['bytes=0-0']}), None)
             d = agent.request('HEAD', url.encode(), None)
             d.addCallback(handle_response)
 
@@ -208,7 +207,7 @@ class Play(Resource):
 class WS(WebSocketServerProtocol):
     @staticmethod
     def videofiles(files):
-        return [i for i in files if i.endswith('.mkv') or i.endswith('.mp4') or i.endswith('.avi') or i.endswith('.m4v')]
+        return [i for i in files if torrentstream.TorrentStream.getTypeAndEncoding(i)[0].startswith('video')]
 
     def btfileslist(self, infiles):
         import socket
