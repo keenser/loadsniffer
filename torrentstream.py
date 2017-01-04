@@ -292,7 +292,7 @@ class TorrentStream(static.File):
             try:
                 resume_data = dict(alert.resume_data)
                 resume_data.pop('piece_priority', None)
-                resume_data.pop('unfinished', None)
+                resume_data.pop('paused', None)
                 with open(alert.handle.save_path() + "/" + alert.handle.get_torrent_info().name() + ".fastresume", 'wb') as fd:
                     fd.write(libtorrent.bencode(resume_data))
             except (IOError, EOFError) as e:
