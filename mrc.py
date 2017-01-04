@@ -19,7 +19,7 @@ import urllib
 import torrentstream
 
 def printall(*args, **kwargs):
-    print "printall", args, kwargs
+    print("printall", args, kwargs)
 
 class MediaDevice(object):
     def __init__(self, device):
@@ -45,7 +45,7 @@ class UPnPctrl(object):
         self.registered_callbacks = {}
 
     def media_renderer_removed(self, usn = None):
-        print "media_renderer_removed", usn
+        print("media_renderer_removed", usn)
         self.mediadevices.pop(usn, None)
         if self.device:
             if self.device.media.get_usn() == usn:
@@ -59,12 +59,12 @@ class UPnPctrl(object):
         if device is None:
             return
 
-        print "found upnp device", device.get_usn(), device.get_friendly_name()
+        print("found upnp device", device.get_usn(), device.get_friendly_name())
 
         if device.get_device_type().find('MediaRenderer') < 0:
             return
 
-        print "media renderer", device.get_friendly_name()
+        print("media renderer", device.get_friendly_name())
 
         mediadevice = MediaDevice(device)
         self.mediadevices[device.get_usn()] = mediadevice
@@ -79,7 +79,7 @@ class UPnPctrl(object):
         if self.device:
             def handle_response(response):
                 ctype = response.headers.getRawHeaders('content-type', default=[vtype])[0]
-                print "type", ctype
+                print("type", ctype)
                 mime = 'http-get:*:%s:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000' % ctype
                 res = DIDLLite.Resource(url, mime)
                 item = DIDLLite.VideoItem(None, None, None)
@@ -114,12 +114,12 @@ class UPnPctrl(object):
                     elt = DIDLLite.DIDLElement.fromString(variable.value)
                     self.mediadevices[usn].status['item'] = []
                     for item in elt.getItems():
-                        print "now playing:", item.title, item.id
+                        print("now playing:", item.title, item.id)
                         self.mediadevices[usn].status['item'].append({'url':item.id, 'title':item.title})
                 except SyntaxError:
                     return
         elif variable.name == 'TransportState':
-            print variable.name, 'changed from', variable.old_value, 'to', variable.value
+            print(variable.name, 'changed from', variable.old_value, 'to', variable.value)
             self.mediadevices[usn].status['state'] = variable.value
         self.trigger_callbacks()
 
@@ -134,7 +134,7 @@ class UPnPctrl(object):
                     else:
                         callback['status'] = status
             except Exception as e:
-                print "trigger_callbacks exception", e
+                print("trigger_callbacks exception", e)
 
     def refresh(self):
         self.coherence.msearch.double_discover()
@@ -169,7 +169,13 @@ class Info(Resource):
     @staticmethod
     def youtube_dl(url):
         #try:
-            ydl = youtube_dl.YoutubeDL(params={'quiet': True, 'cachedir': '/tmp/', 'youtube_include_dash_manifest': False})
+            ydl = youtube_dl.YoutubeDL(
+                params={
+                    'quiet': True,
+                    'cachedir': '/tmp/',
+                    'youtube_include_dash_manifest': False,
+                    'prefer_ffmpeg': True
+                })
             stream = ydl.extract_info(url, download=False, process=True)
             #format_selector = ydl.build_format_selector('all[height>=480]')
             #select = list(format_selector(stream.get('formats')))
@@ -199,7 +205,7 @@ class Play(Resource):
     def render_GET(self, request):
         url = request.args.get('url',[None])[0]
         if url:
-            print "push to play url:", request.args.get('url')
+            print("push to play url:", request.args.get('url'))
             upnp.play(request.args.get('url'), request.args.get('title', 'Video'))
             return 'play'
         return "no 'url' parameter pecified"
@@ -232,30 +238,30 @@ class WS(WebSocketServerProtocol):
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
         self._btupdate = btupdate
-        print "WS client connected", self.peer
+        print("WS client connected", self.peer)
         upnp.add_alert_handler(self._upnpupdate)
         torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self, wasClean, code, reason):
         if hasattr(self, '_upnpupdate'):
-            print "WS client closed", reason , id(self._upnpupdate)
+            print("WS client closed", reason , id(self._upnpupdate))
             upnp.remove_alert_handler(self._upnpupdate)
         if hasattr(self, '_btupdate'):
             torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
     def onMessage(self, payload, isBinary):
-        print "WS onMessage", payload
+        print("WS onMessage", payload)
         jsondata = json.loads(payload)
         if jsondata.get('action') == 'play':
             data = jsondata['play']
             if data.get('url', None):
-                print "play url", data.get('url')
-                print "cookie", data.get('cookie')
+                print("play url", data.get('url'))
+                print("cookie", data.get('cookie'))
                 if data.get('cookie'):
                     url = "http://{}:8080/?url={}&cookie={}".format(self.http_request_host, urllib.quote(data.get('url')), urllib.quote(data.get('cookie')))
                 else:
                     url = data.get('url')
-                print "push to play url:", url
+                print("push to play url:", url)
                 upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             upnp.refresh()
@@ -263,7 +269,7 @@ class WS(WebSocketServerProtocol):
             uid = jsondata.get('_uid')
             data = jsondata.get('search')
             url = data['url']
-            print 'search', url
+            print('search', url)
             def jsonsend(message):
                 self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
             def errorsend(message):
@@ -275,7 +281,7 @@ class WS(WebSocketServerProtocol):
             uid = jsondata.get('_uid')
             data = jsondata.get('add')
             url = data['url']
-            print 'add', url
+            print('add', url)
             def jsonsend(message):
                 self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
             def bittorrent(message):
