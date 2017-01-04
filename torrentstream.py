@@ -51,11 +51,9 @@ class DynamicTorrentProducer(static.StaticProducer):
             self.stopProducing()
 
     def piece_finished_alert(self, alert):
-        print("piece_finished_alert", alert.message())
-        if self.fileinfo.handle.have_piece(self.priority_window):
-            self.slide()
         if self.cansend:
             self.resumeProducing()
+        self.slide()
 
     def resumeProducing(self):
         print("index", self.piece.piece)
@@ -100,18 +98,19 @@ class DynamicTorrentProducer(static.StaticProducer):
     def slide(self, offset = None):
         if offset is not None:
             self.priority_window = offset
-        # find next missing piece from current piece offset
-        while self.fileinfo.handle.have_piece(self.priority_window) and self.priority_window <= self.lastpiece.piece:
-            self.priority_window += 1
-        print("priority_window", self.priority_window, self.lastpiece.piece)
-        if self.priority_window <= self.lastpiece.piece:
-            priority = 0
-            print("priority", priority, range(self.priority_window, min(self.lastpiece.piece + 1, self.priority_window + len(self.prioritymask))))
-            #for window in range(self.priority_window, min(self.lastpiece.piece + 1, self.priority_window + len(self.prioritymask))):
-            for window in range(self.priority_window, self.priority_window + len(self.prioritymask)):
-                if not self.fileinfo.handle.have_piece(window):
-                    self.fileinfo.handle.piece_priority(window, self.prioritymask[priority])
-                priority += 1
+        window = self.priority_window
+        for priority in self.prioritymask:
+            while True:
+                if window > self.lastpiece.piece:
+                    return
+                if self.fileinfo.handle.have_piece(window):
+                    if window == self.priority_window:
+                        self.priority_window += 1
+                    window += 1
+                else:
+                    self.fileinfo.handle.piece_priority(window, priority)
+                    window += 1
+                    break
 
 
 # speedup reading pieces using direct access to file on filesystem
@@ -166,13 +165,6 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         else:
             self.cansend = True
             self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0)
-
-    def piece_finished_alert(self, alert):
-        print("piece_finished_alert", alert.message())
-        if self.cansend:
-            self.resumeProducing()
-        #if self.fileinfo.handle.have_piece(self.priority_window):
-        self.slide()
 
 
 class TorrentProducer(StaticTorrentProducer):
@@ -252,17 +244,21 @@ class TorrentStream(static.File):
                 print("Unable to load fastresume", e)
 
         def torrent_checked_alert(alert):
+            alert.handle.resume()
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
 
-        #def metadata_received_alert(alert):
-        #    print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
+        def metadata_received_alert(alert):
+            print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
             self._handle_alert([Files_List_Update_Alert(self.list_files())])
 
-        def metadata_received_alert(alert):
-            print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
+        def torrent_added_alert(alert):
+            if alert.handle.get_torrent_info():
+                metadata_received_alert(alert)
+            else:
+                alert.handle.resume()
 
         def torrent_removed_alert(alert):
             info_hash = str(alert.handle.info_hash())
@@ -302,6 +298,7 @@ class TorrentStream(static.File):
             except (IOError, EOFError) as e:
                 print("Unable to save fastresume", e)
 
+        self.add_alert_handler('torrent_added_alert', torrent_added_alert)
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
         self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
@@ -318,6 +315,7 @@ class TorrentStream(static.File):
                 reactor.callLater(0, self._handle_alert, self.session.pop_alerts())
 
     def _handle_alert(self, alerts):
+        self.session.pop_alerts()
         for alert in alerts:
             if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
                 print('{0}: {1}'.format(alert.what(), alert.message()))
@@ -356,10 +354,10 @@ class TorrentStream(static.File):
             add_torrent_params['resume_data'] = resume_data
         if url:
             add_torrent_params['url'] = url
-        add_torrent_params['save_path'] = self.options.get('save_path', '/tmp/')
+        add_torrent_params['save_path'] = self.options.get('save_path')
         add_torrent_params['storage_mode'] = libtorrent.storage_mode_t.storage_mode_sparse
         add_torrent_params['auto_managed'] = False
-        add_torrent_params['paused'] = False
+        add_torrent_params['paused'] = True
         self.session.async_add_torrent(add_torrent_params)
 
     def remove_torrent(self, info_hash):
@@ -566,10 +564,8 @@ class TorrentStream(static.File):
 
 
 def main():
-    print(libtorrent.version)
     root = Resource()
-    torrentstream = TorrentStream(save_path='/media/sda/tmp/')
-    #torrentstream = TorrentStream()
+    torrentstream = TorrentStream()
     root.putChild("bt", torrentstream)
     site = server.Site(root)
     reactor.listenTCP(8882, site)
