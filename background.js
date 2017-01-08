@@ -15,15 +15,18 @@ function MRCServer(url, handler) {
         console.log("disconnect", websocket);
         websocket && websocket.close && websocket.close();
     }
-    mrc.connect = function(opencallback) {
+    mrc.connect = function(opencallback, closecallback) {
         doclose = false;
         websocket = new WebSocket(mrc.url);
         websocket.binaryType = "arraybuffer";
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
+            if (closecallback) {
+                closecallback();
+            }
             if (!doclose) {
                 setTimeout(function() {
-                    mrc.connect(opencallback);
+                    mrc.connect(opencallback, closecallback);
                 }, 2000);
             }
         }
@@ -59,8 +62,7 @@ var mrc = new MRCServer(mrcurl,function(request) {
     } else if (request.action == 'upnpupdate') {
         UpdateUPNPStatus(request.upnpupdate);
     }
-}
-);
+});
 var get = function(url, callback) {
     var xmlRequest = new XMLHttpRequest();
     xmlRequest.open('GET', url, true);
@@ -343,6 +345,26 @@ var onStartupOrOnInstalledListener = function() {
         mrc.sendMessage({
             action: 'upnpstatus',
         }, UpdateUPNPStatus);
+        chrome.browserAction.setIcon({
+            path: {
+                "128": "icons/blue_128x128.png",
+                "48": "icons/blue_48x48.png",
+                "32": "icons/blue_32x32.png",
+                "16": "icons/blue_16x16.png"
+            }
+        });
+    },
+    function() {
+        console.log('mrc disconnected');
+        UpdateUPNPStatus(null);
+        chrome.browserAction.setIcon({
+            path: {
+                "128": "icons/grey_128x128.png",
+                "48": "icons/grey_48x48.png",
+                "32": "icons/grey_32x32.png",
+                "16": "icons/grey_16x16.png"
+            }
+        });
     });
 }
 chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
