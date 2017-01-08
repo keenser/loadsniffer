@@ -315,7 +315,6 @@ class TorrentStream(static.File):
                 reactor.callLater(0, self._handle_alert, self.session.pop_alerts())
 
     def _handle_alert(self, alerts):
-        self.session.pop_alerts()
         for alert in alerts:
             if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
                 print('{0}: {1}'.format(alert.what(), alert.message()))
@@ -326,6 +325,7 @@ class TorrentStream(static.File):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
                 for handler in self._alert_handlers.get(what, []):
                     handler(alert)
+        self.session.pop_alerts()
 
     def save_resume_data(self, handle):
         if handle.is_valid() and handle.has_metadata() and handle.need_save_resume_data():

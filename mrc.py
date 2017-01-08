@@ -17,6 +17,8 @@ from coherence.upnp.core import DIDLLite
 import json
 import urllib
 import torrentstream
+import logging
+import logging.handlers
 
 def printall(*args, **kwargs):
     print("printall", args, kwargs)
@@ -98,6 +100,7 @@ class UPnPctrl(object):
             agent = Agent(reactor)
             d = agent.request('HEAD', url.encode(), None)
             d.addCallback(handle_response)
+            d.addErrback(printall)
 
     def add_alert_handler(self, callback):
         self.registered_callbacks[id(callback)] = {'status': None, 'callback': callback}
@@ -206,7 +209,7 @@ class Play(Resource):
         url = request.args.get('url',[None])[0]
         if url:
             print("push to play url:", request.args.get('url'))
-            upnp.play(request.args.get('url'), request.args.get('title', 'Video'))
+            upnp.play(url, request.args.get('title', 'Video'))
             return 'play'
         return "no 'url' parameter pecified"
 
@@ -218,7 +221,6 @@ class WS(WebSocketServerProtocol):
     def btfileslist(self, infiles):
         import socket
         files = self.videofiles(infiles)
-        #self.sendMessage(json.dumps({'action':'btupdate', 'btupdate':{'prefix':'http://{}/bt/get?url='.format(self.http_headers['host']), 'files':files}}))
         return {
                  'prefix':'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880'),
                  'files':files
@@ -226,14 +228,11 @@ class WS(WebSocketServerProtocol):
 
     def onOpen(self):
         def upnpupdate(message):
-            self.sendMessage(json.dumps({'action':'upnpupdate', 'upnpupdate':message}))
+            self.sendMessage({'action':'upnpupdate', 'upnpupdate':message})
 
         def btupdate(alert):
             files = self.videofiles(alert.files)
-            self.sendMessage(json.dumps(
-              {'action':'btupdate',
-                'btupdate': self.btfileslist(alert.files)
-              }))
+            self.sendMessage({'action':'btupdate', 'btupdate': self.btfileslist(alert.files)})
 
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
@@ -249,58 +248,56 @@ class WS(WebSocketServerProtocol):
         if hasattr(self, '_btupdate'):
             torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
+    def sendMessage(self, message, request = {}):
+        uid = request.get('_uid', None)
+        if uid:
+            response = {'_uid': uid, 'data': message}
+        else:
+            response = message
+        super(WS, self).sendMessage(json.dumps(response))
+
     def onMessage(self, payload, isBinary):
         print("WS onMessage", payload)
         jsondata = json.loads(payload)
         if jsondata.get('action') == 'play':
-            data = jsondata['play']
-            if data.get('url', None):
-                print("play url", data.get('url'))
-                print("cookie", data.get('cookie'))
+            data = jsondata.get('play', {})
+            url = data.get('url')
+            if url:
                 if data.get('cookie'):
-                    url = "http://{}:8080/?url={}&cookie={}".format(self.http_request_host, urllib.quote(data.get('url')), urllib.quote(data.get('cookie')))
-                else:
-                    url = data.get('url')
+                    print("cookie", data.get('cookie'))
+                    url = "http://{}:8080/?url={}&cookie={}".format(self.http_request_host, urllib.quote(url), urllib.quote(data.get('cookie')))
                 print("push to play url:", url)
                 upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             upnp.refresh()
         elif jsondata.get('action') == 'search':
-            uid = jsondata.get('_uid')
             data = jsondata.get('search')
-            url = data['url']
+            url = data.get('url')
             print('search', url)
             def jsonsend(message):
-                self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
+                self.sendMessage(message, jsondata)
             def errorsend(message):
-                self.sendMessage(json.dumps({'_uid': uid, 'data': None}))
+                self.sendMessage(None, jsondata)
             d = threads.deferToThread(Info.youtube_dl, url)
             d.addCallback(jsonsend)
             d.addErrback(errorsend)
         elif jsondata.get('action') == 'add':
-            uid = jsondata.get('_uid')
             data = jsondata.get('add')
-            url = data['url']
+            url = data.get('url')
             print('add', url)
             def jsonsend(message):
-                self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
+                self.sendMessage(message, jsondata)
             def bittorrent(message):
+                self.sendMessage(None, jsondata)
                 torrent.add_torrent(url)
-                jsonsend(None)
             d = threads.deferToThread(Info.youtube_dl, url)
             d.addCallback(jsonsend)
             d.addErrback(bittorrent)
         elif jsondata.get('action') == 'btstatus':
-            uid = jsondata.get('_uid')
-            self.sendMessage(json.dumps(
-              {
-                '_uid': uid,
-                'data': self.btfileslist(torrent.list_files())
-              }))
+            self.sendMessage(self.btfileslist(torrent.list_files()), jsondata)
         elif jsondata.get('action') == 'upnpstatus':
-            uid = jsondata.get('_uid')
             message = upnp.device.status if upnp.device else None
-            self.sendMessage(json.dumps({'_uid': uid, 'data': message}))
+            self.sendMessage(message, jsondata)
 
 upnp = UPnPctrl()
 torrent = torrentstream.TorrentStream(save_path='/media/sda/tmp/')
