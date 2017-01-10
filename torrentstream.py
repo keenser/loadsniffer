@@ -244,7 +244,7 @@ class TorrentStream(static.File):
                 print("Unable to load fastresume", e)
 
         def torrent_checked_alert(alert):
-            alert.handle.resume()
+            #alert.handle.resume()
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
 
         def metadata_received_alert(alert):
@@ -257,8 +257,8 @@ class TorrentStream(static.File):
         def torrent_added_alert(alert):
             if alert.handle.get_torrent_info():
                 metadata_received_alert(alert)
-            else:
-                alert.handle.resume()
+            #else:
+            #    alert.handle.resume()
 
         def torrent_removed_alert(alert):
             info_hash = str(alert.handle.info_hash())
@@ -354,19 +354,22 @@ class TorrentStream(static.File):
             add_torrent_params['resume_data'] = resume_data
         if url:
             add_torrent_params['url'] = url
-        add_torrent_params['save_path'] = self.options.get('save_path')
-        add_torrent_params['storage_mode'] = libtorrent.storage_mode_t.storage_mode_sparse
-        add_torrent_params['auto_managed'] = False
-        add_torrent_params['paused'] = True
-        self.session.async_add_torrent(add_torrent_params)
+        if len(add_torrent_params):
+            add_torrent_params['save_path'] = self.options.get('save_path')
+            add_torrent_params['storage_mode'] = libtorrent.storage_mode_t.storage_mode_sparse
+            add_torrent_params['auto_managed'] = False
+            add_torrent_params['paused'] = False
+            self.session.async_add_torrent(add_torrent_params)
 
     def remove_torrent(self, info_hash):
         try:
             handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
             if handle.is_valid():
-                fastresume = handle.save_path() + "/" + handle.get_torrent_info().name() + '.fastresume'
-                if os.path.exists(fastresume):
-                    os.remove(fastresume)
+                ti = handle.get_torrent_info()
+                if ti:
+                    fastresume = handle.save_path() + "/" + ti.name() + '.fastresume'
+                    if os.path.exists(fastresume):
+                        os.remove(fastresume)
                 self.session.remove_torrent(handle, libtorrent.options_t.delete_files)
                 return {'status': '{} removed'.format(info_hash)}
         except TypeError:

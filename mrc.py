@@ -213,6 +213,18 @@ class Play(Resource):
             return 'play'
         return "no 'url' parameter pecified"
 
+class Root(Resource):
+    def getChild(self, path, request):
+        return self
+
+    def render_GET(self, request):
+        prepath = 'index.html'
+        if len(request.prepath) == 1 and request.prepath[0] == 'popup.css':
+            prepath = request.prepath[0]
+            request.setHeader("Content-Type", "text/css; charset=utf-8")
+        with open(prepath, 'r') as f:
+            return f.read()
+
 class WS(WebSocketServerProtocol):
     @staticmethod
     def videofiles(files):
@@ -303,7 +315,7 @@ upnp = UPnPctrl()
 torrent = torrentstream.TorrentStream(save_path='/media/sda/tmp/')
 
 def start():
-    root = Resource()
+    root = Root()
     root.putChild("info", Info())
     root.putChild("play", Play())
     root.putChild("bt", torrent)
