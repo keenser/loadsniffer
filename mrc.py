@@ -219,9 +219,10 @@ class Root(Resource):
 
     def render_GET(self, request):
         prepath = 'index.html'
-        if len(request.prepath) == 1 and request.prepath[0] == 'popup.css':
+        if len(request.prepath) == 1 and (request.prepath[0] == 'popup.css' or request.prepath[0] == 'mrc.js'):
             prepath = request.prepath[0]
-            request.setHeader("Content-Type", "text/css; charset=utf-8")
+            filetype, encoding = torrentstream.TorrentStream.getTypeAndEncoding(prepath)
+            request.setHeader("Content-Type", filetype)
         with open(prepath, 'r') as f:
             return f.read()
 

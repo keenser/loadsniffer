@@ -1,68 +1,7 @@
-var urllib = [];
-var btlib = [];
-var upnpstatus = null ;
-var currenttabid = null ;
-var mrcurl = "ws://nuc.grsk.eu.org:8881"
-function MRCServer(url, handler) {
-    var mrc = {};
-    var doclose = false;
-    var websocket = null ;
-    var uid = 1;
-    var callback_pool = {};
-    mrc.url = url;
-    mrc.disconnect = function() {
-        doclose = true;
-        console.log("disconnect", websocket);
-        websocket && websocket.close && websocket.close();
-    }
-    mrc.connect = function(opencallback, closecallback) {
-        doclose = false;
-        websocket = new WebSocket(mrc.url);
-        websocket.binaryType = "arraybuffer";
-        websocket.onopen = opencallback;
-        websocket.onclose = function(evt) {
-            if (closecallback) {
-                closecallback();
-            }
-            if (!doclose) {
-                setTimeout(function() {
-                    mrc.connect(opencallback, closecallback);
-                }, 2000);
-            }
-        }
-        websocket.onmessage = function(data) {
-            console.log("onmessage websocket", data);
-            var jsondata = JSON.parse(data.data);
-            if (jsondata['_uid'] !== undefined) {
-                callback_pool[jsondata['_uid']](jsondata['data']);
-                delete callback_pool[jsondata['_uid']];
-            } else if (handler) {
-                handler(jsondata);
-            }
-        }
-    }
-    mrc.sendMessage = function(data, callback) {
-        console.log('send', data);
-        if (websocket.readyState) {
-            var senddata = data;
-            if (callback !== undefined) {
-                var currentid = uid++;
-                senddata['_uid'] = currentid;
-                callback_pool[currentid] = callback;
-            }
-            websocket.send(JSON.stringify(data));
-        }
-    }
-    return mrc;
-}
-var mrc = new MRCServer(mrcurl,function(request) {
-    console.log("ws request", request);
-    if (request.action == 'btupdate') {
-        UpdateBTStatus(request.btupdate);
-    } else if (request.action == 'upnpupdate') {
-        UpdateUPNPStatus(request.upnpupdate);
-    }
-});
+var urllib = []
+var btlib = []
+var upnpstatus = null
+var currenttabid = null
 var get = function(url, callback) {
     var xmlRequest = new XMLHttpRequest();
     xmlRequest.open('GET', url, true);
