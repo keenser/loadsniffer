@@ -1,29 +1,28 @@
-var tabid = null ;
+var tabid = null;
 var sendMessage = chrome.extension.sendMessage;
-
-chrome.tabs.getSelected(null , function(tab) {
+chrome.tabs.getSelected(null, function(tab) {
     tabid = tab.id;
     sendMessage({
         action: "tabid",
         tabid: tabid
     }, function(data) {
         addLinks(data.urllib);
-        addBt(data.btlib);
+        UpdateBTStatus(data.btlib);
         UpdateUPNPStatus(data.upnpstatus);
     });
 });
-chrome.extension.onMessage.addListener(function(request, sender) {
-    if (request.action === 'addline') {
+chrome.extension.onMessage.addListener(function(message, sender) {
+    if (message.action === 'addline') {
         var container = document.getElementById("content");
-        addLine(container, request.addline);
-    } else if (request.action === 'cleantab') {
-        if (request.cleantab == tabid) {
+        addLine(container, message.response);
+    } else if (message.action === 'cleantab') {
+        if (message.cleantab == tabid) {
             var container = document.getElementById("content");
             container.innerText = '';
         }
-    } else if (request.action === 'upnpstatus') {
-        UpdateUPNPStatus(request.upnpstatus);
-    } else if (request.action === 'btstatus') {
-        addBt(request.btstatus);
+    } else if (message.action === 'upnpstatus') {
+        UpdateUPNPStatus(message.response);
+    } else if (message.action === 'btstatus') {
+        UpdateBTStatus(message.response);
     }
 });

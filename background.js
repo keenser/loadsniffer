@@ -38,11 +38,11 @@ var ResolveListener = function(tabid, url, title, details, callback) {
     console.log("ResolveListener:", tabid, title, url, details);
     mrc.sendMessage({
         action: 'search',
-        search: {
+        request: {
             url: url
         }
     }, function(data) {
-        callback(tabid, data);
+        callback(tabid, data.response);
     });
 }
 var RuTubeListener = function(tabid, url, title, details, callback) {
@@ -93,7 +93,7 @@ var HDSListener = function(tabid, url, title, details, callback) {
 var f4mListener = function(tabid, url, title, details, callback) {
     console.log("f4mListener:", tabid, title, url, details.type);
     get(url, function(data) {
-        xml = data.responseXML || null ;
+        xml = data.responseXML || null;
         if (!xml) {
             return;
         }
@@ -180,35 +180,28 @@ var MailRuListener = function(tabid, url, title, details, callback) {
     });
 }
 var UpdateBTStatus = function(data) {
+    btlib = data;
     console.log('UpdateBTStatus', data);
-    btlib = []
-    for (var i = 0; i < data.files.length; i++) {
-        btlib.push({
-            src: 'bt',
-            url: data.prefix + encodeURIComponent(data.files[i]),
-            title: data.files[i]
-        });
-    }
     chrome.extension.sendMessage({
-        action: "btstatus",
-        btstatus: btlib
+        action: 'btstatus',
+        response: btlib
     });
 }
 var UpdateUPNPStatus = function(data) {
     upnpstatus = data;
     console.log('UpdateUPNPStatus', data);
     chrome.extension.sendMessage({
-        action: "upnpstatus",
-        upnpstatus: data
+        action: 'upnpstatus',
+        response: upnpstatus
     });
 }
 var UpdateTabLib = function(id, data) {
     urllib[id] = urllib[id] || []
-    if (data !== null ) {
+    if (data !== null) {
         console.log('UpdateTabLib', data);
         for (var i = 0; i < urllib[id].length; i++) {
             if (urllib[id][i].url === data.url) {
-                return null ;
+                return null;
             }
         }
         urllib[id].push(data);
@@ -216,7 +209,7 @@ var UpdateTabLib = function(id, data) {
         if (id == currenttabid) {
             chrome.extension.sendMessage({
                 action: "addline",
-                addline: data
+                response: data
             });
         }
     }
@@ -236,7 +229,7 @@ var onHeadersReceived = function(callback, urlfilter) {
                 callback(id, details.url, tab.title, details, UpdateTabLib);
             });
         }
-        return null ;
+        return null;
     }
     chrome.tabs.onRemoved.addListener(function(tabId) {
         removed[tabId] = true
@@ -267,7 +260,7 @@ function context_onclick(info, tab) {
     console.log('context_onclick', info, tab);
     mrc.sendMessage({
         action: 'add',
-        add: {
+        request: {
             url: info.linkUrl
         }
     }, function(data) {
@@ -280,10 +273,10 @@ var onStartupOrOnInstalledListener = function() {
         console.log('mrc connected');
         mrc.sendMessage({
             action: 'btstatus',
-        }, UpdateBTStatus);
+        });
         mrc.sendMessage({
             action: 'upnpstatus',
-        }, UpdateUPNPStatus);
+        });
         chrome.browserAction.setIcon({
             path: {
                 "128": "icons/blue_128x128.png",
@@ -292,8 +285,7 @@ var onStartupOrOnInstalledListener = function() {
                 "16": "icons/blue_16x16.png"
             }
         });
-    },
-    function() {
+    }, function() {
         console.log('mrc disconnected');
         UpdateUPNPStatus(null);
         chrome.browserAction.setIcon({
@@ -312,17 +304,17 @@ chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
         ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
     }
 });
-chrome.extension.onMessage.addListener(function(request, sender, f_callback) {
-    if (request.action == 'tabid') {
-        currenttabid = request.tabid;
+chrome.extension.onMessage.addListener(function(message, sender, f_callback) {
+    if (message.action == 'tabid') {
+        currenttabid = message.tabid;
         f_callback({
-            urllib: urllib[request.tabid] || [],
+            urllib: urllib[message.tabid] || [],
             btlib: btlib,
             upnpstatus: upnpstatus
         });
-    } else if (request.action == 'play') {
-        console.log('play', request.play);
-        mrc.sendMessage(request);
+    } else if (message.action == 'play') {
+        console.log('play', message);
+        mrc.sendMessage(message);
     }
 });
 chrome.contextMenus.create({

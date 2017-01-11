@@ -135,7 +135,6 @@ var UpdateUPNPStatus = function(data) {
     container.textContent = text;
 }
 var UpdateBTStatus = function(data) {
-    console.log('UpdateBTStatus', data);
     let container = document.getElementById("bt");
     container.style.cursor = 'pointer';
     container.textContent = '';

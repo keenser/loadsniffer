@@ -1,106 +1,106 @@
 html {
-  min-height: 120px;
-  max-height: 300px;
-  min-width: 640px;
-  max-width: 640px;
-  border: 0;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
+    min-height: 120px;
+    max-height: 300px;
+    min-width: 640px;
+    max-width: 640px;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
 }
 
 body {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  background-color: #F5F5F5;
-  font-family: 'Helvetica Neue', 'Lucida Grande', sans-serif;
-  font-size: 75%;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    background-color: #F5F5F5;
+    font-family: 'Helvetica Neue', 'Lucida Grande', sans-serif;
+    font-size: 75%;
 }
 
 table {
-  font-size: 14px;
+    font-size: 14px;
 }
 
 #content {
-  overflow-x: hidden;
-  overflow-y: scroll;
+    overflow-x: hidden;
+    overflow-y: scroll;
 }
 
 h1 {
-  font-size: 14px;
-  color: #888888;
-  font-weight: normal;
-  font-family: Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    color: #888888;
+    font-weight: normal;
+    font-family: Helvetica, Arial, sans-serif;
 }
 
-.content div{
-  margin: 1px;
-  display: flex;
+.content div {
+    margin: 1px;
+    display: flex;
 }
 
-.content div:hover{
-  background: #E1E7ED;
+.content div:hover {
+    background: #E1E7ED;
 }
 
-.content div span{
-  background: #D5DDE5;
-  padding: 4px;
-  padding-left: 10px;
-  padding-right: 10px;
-  margin: 1px;
-  float: right;
-  transition: 0.5s;
+.content div span {
+    background: #D5DDE5;
+    padding: 4px;
+    padding-left: 10px;
+    padding-right: 10px;
+    margin: 1px;
+    float: right;
+    transition: 0.5s;
 }
 
-.content div span:hover{
-  background: #BBC7D3;
+.content div span:hover {
+    background: #BBC7D3;
 }
 
-.content div span:first-child{
-  width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  background: transparent;
+.content div span:first-child {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    background: transparent;
 }
 
 .index {
-  margin: 8px;
+    margin: 8px;
 }
 
 .input {
-  height: 26px;
-  line-height: 20px;
-  padding: 3px 0.5em;
-  border: solid 1px;
-  outline: none;
-  width: 100%;
-  border-radius: 4px;
-  font-size: inherit;
+    height: 26px;
+    line-height: 20px;
+    padding: 3px 0.5em;
+    border: solid 1px;
+    outline: none;
+    width: 100%;
+    border-radius: 4px;
+    font-size: inherit;
 }
 
 .torrent span {
-  display: block;
-  background: #D5DDE5;
-  padding: 4px;
-  padding-left: 10px;
-  padding-right: 10px;
-  margin: 1px;
-  transition: 0.5s;
+    display: block;
+    background: #D5DDE5;
+    padding: 4px;
+    padding-left: 10px;
+    padding-right: 10px;
+    margin: 1px;
+    transition: 0.5s;
 }
 
-.torrent span:hover{
-  background: #BBC7D3;
+.torrent span:hover {
+    background: #BBC7D3;
 }
 
 .torrent div:first-child {
-  display: flex;
+    display: flex;
 }
 
-.torrent div:first-child span:not(:hover){
-  background: transparent;
+.torrent div:first-child span:not(:hover) {
+    background: transparent;
 }
 
-.torrent div:first-child span:first-child{
-  width: 100%;
+.torrent div:first-child span:first-child {
+    width: 100%;
 }
