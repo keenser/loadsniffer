@@ -257,7 +257,8 @@ class TorrentStream(static.File):
         def torrent_added_alert(alert):
             if alert.handle.get_torrent_info():
                 metadata_received_alert(alert)
-            #else:
+            else:
+                self._handle_alert([Files_List_Update_Alert(self.list_files())])
             #    alert.handle.resume()
 
         def torrent_removed_alert(alert):
@@ -360,6 +361,9 @@ class TorrentStream(static.File):
             add_torrent_params['auto_managed'] = False
             add_torrent_params['paused'] = False
             self.session.async_add_torrent(add_torrent_params)
+            return True
+        else:
+            return False
 
     def remove_torrent(self, info_hash):
         try:
@@ -401,17 +405,26 @@ class TorrentStream(static.File):
             return {'error': 'incorrect hash'}
         return {'error': 'not found'}
 
-    def list_torrents(self):
-        data = {}
-        for handle in self.session.get_torrents():
-            info_hash = str(handle.info_hash())
-            data[info_hash] = []
-            for file in handle.get_torrent_info().files():
-                data[info_hash].append(file.path)
-        return data
-
     def list_files(self):
-        return sorted(self._files_list)
+        directory = []
+        for handle in self.session.get_torrents():
+            if handle.is_valid():
+                data = {}
+                data['info_hash'] = str(handle.info_hash())
+                data['files'] = []
+                ti = handle.get_torrent_info()
+                if ti:
+                    data['title'] = ti.name()
+                    for file in handle.get_torrent_info().files():
+                        data['files'].append(file.path)
+                    data['files'].sort()
+                else:
+                    data['title'] = str(handle.info_hash())
+                directory.append(data)
+        return sorted(directory, key=lambda data: data['title'])
+
+    #def list_files(self):
+    #    return sorted(self._files_list)
 
     def status(self):
         status = {}
@@ -537,7 +550,7 @@ class TorrentStream(static.File):
         elif request.postpath[0] == 'ls':
             ret = self.list_files()
         elif request.postpath[0] == 'get' and url:
-            if url not in self.list_files():
+            if url not in self._files_list:
                 ret = {'error': '{} not found'.format(url)}
             else:
                 self.type, self.encoding = self.getTypeAndEncoding(url)

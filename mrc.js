@@ -30,7 +30,7 @@ function MRCServer(url, handler) {
             console.log("onmessage websocket", data);
             var jsondata = JSON.parse(data.data);
             if (jsondata['_uid'] !== undefined) {
-                callback_pool[jsondata['_uid']](jsondata['data']);
+                callback_pool[jsondata['_uid']](jsondata);
                 delete callback_pool[jsondata['_uid']];
             } else if (handler) {
                 handler(jsondata);
@@ -51,12 +51,12 @@ function MRCServer(url, handler) {
     }
     return mrc;
 }
-var mrc = new MRCServer(mrcurl,function(request) {
-    console.log("ws request", request);
-    if (request.action == 'btupdate') {
-        UpdateBTStatus(request.btupdate);
-    } else if (request.action == 'upnpupdate') {
-        UpdateUPNPStatus(request.upnpupdate);
+var mrc = new MRCServer(mrcurl,function(message) {
+    console.log("ws message", message);
+    if (message.action == 'btstatus') {
+        UpdateBTStatus(message.response);
+    } else if (message.action == 'upnpstatus') {
+        UpdateUPNPStatus(message.response);
     }
 });
 var sendMessage = mrc.sendMessage;
@@ -66,10 +66,10 @@ var onStartupOrOnInstalledListener = function() {
         console.log('mrc connected');
         mrc.sendMessage({
             action: 'btstatus',
-        }, UpdateBTStatus);
+        });
         mrc.sendMessage({
             action: 'upnpstatus',
-        }, UpdateUPNPStatus);
+        });
     },
     function() {
         console.log('mrc disconnected');
@@ -91,7 +91,7 @@ var addSingleLink = function(line, textcontent, url, title, cookie) {
 	if (sendMessage !== undefined) {
             sendMessage({
                 action: "play",
-                play: {
+                request: {
                     title: title,
                     cookie: cookie,
                     url: url
@@ -104,19 +104,13 @@ var addSingleLink = function(line, textcontent, url, title, cookie) {
 }
 var addLine = function(container, linkSource) {
     var line = document.createElement("div");
-    if (linkSource.src == 'bt') {
-        var textcontent = linkSource.title || linkSource.url;
-    }
-    else {
-        var textcontent = linkSource.src + ': ' + linkSource.title || linkSource.url;
-    }
+    var textcontent = linkSource.src + ': ' + linkSource.title || linkSource.url;
     addSingleLink(line, textcontent, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie);
     if (linkSource.bitrate !== undefined) {
         for (var i = 0; i < linkSource.bitrate.length; i++) {
             addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie);
         }
     }
-    //container.appendChild(line);
     container.insertBefore(line, container.firstChild);
 }
 var addLinks = function(videoLinks) {
@@ -124,14 +118,6 @@ var addLinks = function(videoLinks) {
     container.style.cursor = 'pointer';
     for (var i = 0; i < videoLinks.length; ++i) {
         addLine(container, videoLinks[i]);
-    }
-}
-var addBt = function(btlib) {
-    var container = document.getElementById("bt");
-    container.style.cursor = 'pointer';
-    container.textContent = '';
-    for (var i = btlib.length - 1; i >= 0; --i) {
-        addLine(container, btlib[i]);
     }
 }
 var UpdateUPNPStatus = function(data) {
@@ -150,13 +136,47 @@ var UpdateUPNPStatus = function(data) {
 }
 var UpdateBTStatus = function(data) {
     console.log('UpdateBTStatus', data);
-    btlib = []
-    for (var i = 0; i < data.files.length; i++) {
-        btlib.push({
-            src: 'bt',
-            url: data.prefix + encodeURIComponent(data.files[i]),
-            title: data.files[i]
+    let container = document.getElementById("bt");
+    container.style.cursor = 'pointer';
+    container.textContent = '';
+    for (let i = 0; i < data.length; i++) {
+        let title = document.createElement("span");
+        title.textContent = data[i].title;
+        let remove = document.createElement("span");
+        remove.textContent = 'X';
+        remove.title = 'Remove ' + data[i].title;
+        remove.addEventListener('click',
+        function(e) {
+            if (sendMessage !== undefined) {
+                sendMessage({
+                    action: "rm",
+                    request: {
+                        url: data[i].info_hash
+                    }
+                });
+            }
         });
+        let head = document.createElement("div");
+        head.appendChild(title);
+        head.appendChild(remove);
+
+        let files = document.createElement("div");
+        for (let f = 0; f < data[i].files.length; f++) {
+            addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null);
+        }
+        title.addEventListener('click',
+        function(e) {
+            if (files.style.display === 'none') {
+                files.style.display = 'block';
+            }
+            else {
+                files.style.display = 'none';
+            }
+        });
+        let torrent = document.createElement("div");
+        torrent.className = 'torrent';
+        torrent.appendChild(head);
+        torrent.appendChild(files);
+        container.appendChild(torrent);
     }
-    addBt(btlib);
 }

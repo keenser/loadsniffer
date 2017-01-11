@@ -10,13 +10,12 @@ var AddInput = function() {
     var input = document.getElementById("input");
     mrc.sendMessage({
         action: 'add',
-        add: {
+        request: {
             url: input.value
         }
     },
     function(data) {
-        console.log('add', data);
-        if (data) {
+        if (data['response']) {
             input.value = '';
         }
     }); 
@@ -28,6 +27,6 @@ document.onload = onStartupOrOnInstalledListener();
 <input type='text' id='input' class='input' placeholder='magnet or url' oninput='AddInput()'/>
 <div id='upnp'></div>
 <h1>Bittorrent Stream:</h1>
-<div class='content' id='bt'></div>
+<div id='bt'></div>
 </body>
 </html>

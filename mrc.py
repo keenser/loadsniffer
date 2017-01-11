@@ -233,19 +233,24 @@ class WS(WebSocketServerProtocol):
 
     def btfileslist(self, infiles):
         import socket
-        files = self.videofiles(infiles)
-        return {
-                 'prefix':'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880'),
-                 'files':files
-               }
+        import os.path
+        import urllib
+        prefix = 'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880')
+        response = []
+        for handle in infiles:
+            data = {}
+            data['info_hash'] = handle['info_hash']
+            data['title'] = handle['title']
+            data['files'] = [{'title': os.path.basename(i), 'url': prefix + urllib.quote(i.encode("utf-8"))} for i in self.videofiles(handle['files'])]
+            response.append(data)
+        return response
 
     def onOpen(self):
         def upnpupdate(message):
-            self.sendMessage({'action':'upnpupdate', 'upnpupdate':message})
+            self.sendMessage(message, {'action':'upnpstatus'})
 
         def btupdate(alert):
-            files = self.videofiles(alert.files)
-            self.sendMessage({'action':'btupdate', 'btupdate': self.btfileslist(alert.files)})
+            self.sendMessage(self.btfileslist(alert.files), {'action':'btstatus'})
 
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
@@ -261,19 +266,15 @@ class WS(WebSocketServerProtocol):
         if hasattr(self, '_btupdate'):
             torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
-    def sendMessage(self, message, request = {}):
-        uid = request.get('_uid', None)
-        if uid:
-            response = {'_uid': uid, 'data': message}
-        else:
-            response = message
-        super(WS, self).sendMessage(json.dumps(response))
+    def sendMessage(self, message, request):
+        request['response'] = message
+        super(WS, self).sendMessage(json.dumps(request))
 
     def onMessage(self, payload, isBinary):
         print("WS onMessage", payload)
         jsondata = json.loads(payload)
         if jsondata.get('action') == 'play':
-            data = jsondata.get('play', {})
+            data = jsondata.pop('request', {})
             url = data.get('url')
             if url:
                 if data.get('cookie'):
@@ -284,7 +285,7 @@ class WS(WebSocketServerProtocol):
         elif jsondata.get('action') == 'refresh':
             upnp.refresh()
         elif jsondata.get('action') == 'search':
-            data = jsondata.get('search')
+            data = jsondata.pop('request', {})
             url = data.get('url')
             print('search', url)
             def jsonsend(message):
@@ -295,17 +296,33 @@ class WS(WebSocketServerProtocol):
             d.addCallback(jsonsend)
             d.addErrback(errorsend)
         elif jsondata.get('action') == 'add':
-            data = jsondata.get('add')
+            data = jsondata.pop('request', {})
             url = data.get('url')
             print('add', url)
             def jsonsend(message):
                 self.sendMessage(message, jsondata)
             def bittorrent(message):
-                self.sendMessage(None, jsondata)
-                torrent.add_torrent(url)
+                def remove_handlers():
+                    torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
+                    torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
+                def torrent_error_alert(alert):
+                    self.sendMessage(None, jsondata)
+                    remove_handlers()
+                def tracker_announce_alert(alert):
+                    self.sendMessage('done', jsondata)
+                    remove_handlers()
+                if torrent.add_torrent(url):
+                    torrent.add_alert_handler('torrent_error_alert', torrent_error_alert)
+                    torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
+                else:
+                    self.sendMessage(None, jsondata)
             d = threads.deferToThread(Info.youtube_dl, url)
             d.addCallback(jsonsend)
             d.addErrback(bittorrent)
+        elif jsondata.get('action') == 'rm':
+            data = jsondata.pop('request', {})
+            url = data.get('url')
+            torrent.remove_torrent(url)
         elif jsondata.get('action') == 'btstatus':
             self.sendMessage(self.btfileslist(torrent.list_files()), jsondata)
         elif jsondata.get('action') == 'upnpstatus':
