@@ -81,7 +81,6 @@ h1 {
 
 .torrent span {
     display: block;
-    background: #D5DDE5;
     padding: 4px;
     padding-left: 10px;
     padding-right: 10px;
@@ -90,15 +89,11 @@ h1 {
 }
 
 .torrent span:hover {
-    background: #BBC7D3;
+    background: #E1E7ED;
 }
 
 .torrent div:first-child {
     display: flex;
-}
-
-.torrent div:first-child span:not(:hover) {
-    background: transparent;
 }
 
 .torrent div:first-child span:first-child {
