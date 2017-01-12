@@ -1,14 +1,14 @@
 var mrcurl = "ws://nuc.grsk.eu.org:8881"
 function MRCServer(url, handler) {
-    var mrc = {};
-    var doclose = false;
-    var websocket = null ;
-    var uid = 1;
-    var callback_pool = {};
+    let mrc = {};
+    let doclose = false;
+    let websocket = null ;
+    let uid = 1;
+    let callback_pool = {};
     mrc.url = url;
     mrc.disconnect = function() {
         doclose = true;
-        console.log("disconnect", websocket);
+        console.log('websocket disconnect', websocket);
         websocket && websocket.close && websocket.close();
     }
     mrc.connect = function(opencallback, closecallback) {
@@ -27,8 +27,8 @@ function MRCServer(url, handler) {
             }
         }
         websocket.onmessage = function(data) {
-            console.log("onmessage websocket", data);
-            var jsondata = JSON.parse(data.data);
+            console.debug('websocket <', data);
+            let jsondata = JSON.parse(data.data);
             if (jsondata['_uid'] !== undefined) {
                 callback_pool[jsondata['_uid']](jsondata);
                 delete callback_pool[jsondata['_uid']];
@@ -38,11 +38,11 @@ function MRCServer(url, handler) {
         }
     }
     mrc.sendMessage = function(data, callback) {
-        console.log('send', data);
+        console.debug('websocket >', data);
         if (websocket.readyState) {
-            var senddata = data;
+            let senddata = data;
             if (callback !== undefined) {
-                var currentid = uid++;
+                let currentid = uid++;
                 senddata['_uid'] = currentid;
                 callback_pool[currentid] = callback;
             }
@@ -84,7 +84,7 @@ var copyToClipboard = function (str) {
     document.execCommand("Copy", false, null );
 }
 var addSingleLink = function(line, textcontent, url, title, cookie) {
-    var span = document.createElement("span");
+    let span = document.createElement("span");
     span.textContent = textcontent;
     span.title = url;
     span.addEventListener('click', function(e) {
@@ -103,26 +103,26 @@ var addSingleLink = function(line, textcontent, url, title, cookie) {
     line.appendChild(span);
 }
 var addLine = function(container, linkSource) {
-    var line = document.createElement("div");
-    var textcontent = linkSource.src + ': ' + linkSource.title || linkSource.url;
+    let line = document.createElement("div");
+    let textcontent = linkSource.src + ': ' + linkSource.title || linkSource.url;
     addSingleLink(line, textcontent, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie);
     if (linkSource.bitrate !== undefined) {
-        for (var i = 0; i < linkSource.bitrate.length; i++) {
+        for (let i = 0; i < linkSource.bitrate.length; i++) {
             addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie);
         }
     }
     container.insertBefore(line, container.firstChild);
 }
 var addLinks = function(videoLinks) {
-    var container = document.getElementById("content");
+    let container = document.getElementById("content");
     container.style.cursor = 'pointer';
-    for (var i = 0; i < videoLinks.length; ++i) {
+    for (let i = 0; i < videoLinks.length; ++i) {
         addLine(container, videoLinks[i]);
     }
 }
 var UpdateUPNPStatus = function(data) {
-    var container = document.getElementById("upnp");
-    var text = '';
+    let container = document.getElementById("upnp");
+    let text = '';
     if (data) {
         text = data.device;
         if (data.state) {

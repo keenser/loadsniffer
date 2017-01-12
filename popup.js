@@ -13,11 +13,11 @@ chrome.tabs.getSelected(null, function(tab) {
 });
 chrome.extension.onMessage.addListener(function(message, sender) {
     if (message.action === 'addline') {
-        var container = document.getElementById("content");
+        let container = document.getElementById("content");
         addLine(container, message.response);
     } else if (message.action === 'cleantab') {
         if (message.cleantab == tabid) {
-            var container = document.getElementById("content");
+            let container = document.getElementById("content");
             container.innerText = '';
         }
     } else if (message.action === 'upnpstatus') {

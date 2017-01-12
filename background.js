@@ -12,8 +12,8 @@ var get = function(url, callback) {
 }
 var queryHeader = function(headers, headerName) {
     if (headers && headers.length) {
-        for (var i = 0; i < headers.length; ++i) {
-            var header = headers[i];
+        for (let i = 0; i < headers.length; ++i) {
+            let header = headers[i];
             if (header.name.toLowerCase() === headerName)
                 return header.value;
         }
@@ -21,13 +21,13 @@ var queryHeader = function(headers, headerName) {
     return '';
 }
 var LogListener = function(tabid, url, title, details, callback) {
-    var type = queryHeader(details.responseHeaders, 'content-type');
+    let type = queryHeader(details.responseHeaders, 'content-type');
     console.log("LogListener:", tabid, title, url, details.type, type);
 }
 var CommonListener = function(tabid, url, title, details, callback) {
     console.log("CommonListener:", tabid, title, url, details.type);
     url = url.replace(/Seg(\d)+-Frag(\d)+/, "");
-    var data = {
+    let data = {
         src: 'common',
         url: url,
         title: title,
@@ -48,7 +48,7 @@ var ResolveListener = function(tabid, url, title, details, callback) {
 var RuTubeListener = function(tabid, url, title, details, callback) {
     console.log("RutubeListener:", tabid, title, url, details.type);
     get(url, function(data) {
-        var m3u8;
+        let m3u8;
         try {
             m3u8 = data.responseXML.getElementsByTagName('m3u8')[0].textContent.trim();
         } catch (e) {
@@ -60,9 +60,9 @@ var RuTubeListener = function(tabid, url, title, details, callback) {
         }
         get(m3u8, function(data) {
             bitrate = []
-            var lines = data.responseText.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                var result = lines[i].match(/http:\/\/.*\.m3u8.*_(\d+)$/i)
+            let lines = data.responseText.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                let result = lines[i].match(/http:\/\/.*\.m3u8.*_(\d+)$/i)
                 if (result) {
                     bitrate.push({
                         url: result[0],
@@ -70,7 +70,7 @@ var RuTubeListener = function(tabid, url, title, details, callback) {
                     });
                 }
             }
-            var data = {
+            let data = {
                 src: '_rutube',
                 url: m3u8,
                 title: title,
@@ -83,7 +83,7 @@ var RuTubeListener = function(tabid, url, title, details, callback) {
 var HDSListener = function(tabid, url, title, details, callback) {
     console.log("TrackListener:", tabid, title, url, details.type);
     url = url.substring(0, url.lastIndexOf('/'));
-    var data = {
+    let data = {
         src: 'hds',
         url: url,
         title: title
@@ -105,14 +105,14 @@ var f4mListener = function(tabid, url, title, details, callback) {
         }
         media = xml.getElementsByTagName('media');
         bitrate = []
-        for (var i = 0; i < media.length; i++) {
+        for (let i = 0; i < media.length; i++) {
             bitrateurl = media[i].getAttribute("url") || baseurl + media[i].getAttribute("href")
             bitrate.push({
                 url: bitrateurl,
                 bitrate: media[i].getAttribute("bitrate")
             })
         }
-        var data = {
+        let data = {
             src: 'f4m',
             url: url,
             title: title,
@@ -122,14 +122,14 @@ var f4mListener = function(tabid, url, title, details, callback) {
     });
 }
 var MailRuListener = function(tabid, url, title, details, callback) {
-    var type = queryHeader(details.responseHeaders, 'content-type');
+    let type = queryHeader(details.responseHeaders, 'content-type');
     console.log("MailRuListener:", tabid, title, url, details.type, type);
     if (type === 'video/mp4') {
         chrome.cookies.get({
             url: url,
             name: 'video_key'
         }, function(cookie) {
-            var data = {
+            let data = {
                 src: 'mailru',
                 url: url,
                 title: title,
@@ -151,7 +151,7 @@ var MailRuListener = function(tabid, url, title, details, callback) {
     }
     get(jsonurl, function(data) {
         try {
-            var jsondata = JSON.parse(data.responseText);
+            let jsondata = JSON.parse(data.responseText);
             chrome.cookies.get({
                 url: jsonurl,
                 name: 'video_key'
@@ -159,14 +159,14 @@ var MailRuListener = function(tabid, url, title, details, callback) {
                 metaurl = jsondata['meta']['url'];
                 title = jsondata['meta']['title'];
                 bitrate = [];
-                for (var i = 0; i < jsondata['videos'].length; i++) {
+                for (let i = 0; i < jsondata['videos'].length; i++) {
                     bitrate.push({
                         url: jsondata['videos'][i]['url'],
                         bitrate: jsondata['videos'][i]['key'],
                         cookie: cookie.name + '=' + cookie.value
                     })
                 }
-                var data = {
+                let data = {
                     src: 'mailru',
                     url: metaurl,
                     title: title,
@@ -199,7 +199,7 @@ var UpdateTabLib = function(id, data) {
     urllib[id] = urllib[id] || []
     if (data !== null) {
         console.log('UpdateTabLib', data);
-        for (var i = 0; i < urllib[id].length; i++) {
+        for (let i = 0; i < urllib[id].length; i++) {
             if (urllib[id][i].url === data.url) {
                 return null;
             }
@@ -221,9 +221,9 @@ var UpdateTabLib = function(id, data) {
     }
 }
 var onHeadersReceived = function(callback, urlfilter) {
-    var removed = {};
-    var onHeadersReceived = function(details) {
-        var id = details.tabId;
+    let removed = {};
+    let onHeadersReceived = function(details) {
+        let id = details.tabId;
         if (id > -1 && !removed[id]) {
             chrome.tabs.get(id, function(tab) {
                 callback(id, details.url, tab.title, details, UpdateTabLib);
@@ -232,7 +232,9 @@ var onHeadersReceived = function(callback, urlfilter) {
         return null;
     }
     chrome.tabs.onRemoved.addListener(function(tabId) {
-        removed[tabId] = true
+        console.log('remove tab', tabId);
+        removed[tabId] = true;
+        delete urllib[tabId];
     });
     chrome.webRequest.onResponseStarted.addListener(onHeadersReceived, urlfilter, ["responseHeaders"]);
 }
