@@ -22,6 +22,13 @@ h1 {
     font-family: Helvetica, Arial, sans-serif;
 }
 
+span {
+    padding: 4px;
+    padding-left: 10px;
+    padding-right: 10px;
+    margin: 1px;
+}
+
 .content div {
     margin: 1px;
     display: flex;
@@ -33,10 +40,6 @@ h1 {
 
 .content div span {
     background: #D5DDE5;
-    padding: 4px;
-    padding-left: 10px;
-    padding-right: 10px;
-    margin: 1px;
     float: right;
     transition: 0.2s;
 }
@@ -57,7 +60,7 @@ h1 {
 }
 
 .input {
-    height: 26px;
+    height: 30px;
     line-height: 20px;
     padding: 3px 0.5em;
     border: solid 1px;
@@ -65,14 +68,13 @@ h1 {
     width: 100%;
     border-radius: 4px;
     font-size: inherit;
+    box-sizing : border-box;
+    margin-top: 8px;
+    margin-bottom: 8px;
 }
 
 .torrent span {
     display: block;
-    padding: 4px;
-    padding-left: 10px;
-    padding-right: 10px;
-    margin: 1px;
     transition: 0.2s;
 }
 
