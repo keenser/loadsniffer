@@ -163,13 +163,14 @@ var UpdateBTStatus = function(data) {
         for (let f = 0; f < data[i].files.length; f++) {
             addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null);
         }
+        files.className = 'active';
         title.addEventListener('click',
         function(e) {
-            if (files.style.display === 'none') {
-                files.style.display = 'block';
+            if (files.className === 'hided') {
+                files.className = 'active';
             }
             else {
-                files.style.display = 'none';
+                files.className = 'hided';
             }
         });
         let torrent = document.createElement("div");

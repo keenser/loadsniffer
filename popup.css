@@ -38,7 +38,7 @@ h1 {
     padding-right: 10px;
     margin: 1px;
     float: right;
-    transition: 0.5s;
+    transition: 0.2s;
 }
 
 .content div span:hover {
@@ -73,7 +73,7 @@ h1 {
     padding-left: 10px;
     padding-right: 10px;
     margin: 1px;
-    transition: 0.5s;
+    transition: 0.2s;
 }
 
 .torrent span:hover {
@@ -86,4 +86,17 @@ h1 {
 
 .torrent div:first-child span:first-child {
     width: 100%;
+}
+
+.active {
+    max-height: 10000px;
+    transition: opacity .3s, max-height .3s;
+    opacity: 1;
+}
+
+.hided {
+    opacity: 0;
+    max-height: 0;
+    transition: opacity .3s, max-height .3s;
+    overflow: hidden;
 }
