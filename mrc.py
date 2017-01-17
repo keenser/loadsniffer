@@ -9,6 +9,7 @@ from twisted.web import server
 from twisted.web.resource import Resource
 from twisted.web.client import Agent
 from twisted.web.http_headers import Headers
+from twisted.python import log
 from autobahn.twisted.websocket import WebSocketServerFactory, WebSocketServerProtocol
 from autobahn.twisted.resource import WebSocketResource
 from coherence.base import Coherence
@@ -19,9 +20,6 @@ import urllib
 import torrentstream
 import logging
 import logging.handlers
-
-def printall(*args, **kwargs):
-    print("printall", args, kwargs)
 
 class MediaDevice(object):
     def __init__(self, device):
@@ -96,11 +94,11 @@ class UPnPctrl(object):
                 d = stop_action.call(InstanceID=0)
                 d.addBoth(lambda _: transport_action.call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString()))
                 d.addCallback(lambda _: play_action.call(InstanceID=0, Speed=1))
-                d.addErrback(printall)
+                d.addErrback(log.err)
             agent = Agent(reactor)
             d = agent.request('HEAD', url.encode(), None)
             d.addCallback(handle_response)
-            d.addErrback(printall)
+            d.addErrback(log.err)
 
     def add_alert_handler(self, callback):
         self.registered_callbacks[id(callback)] = {'status': None, 'callback': callback}
