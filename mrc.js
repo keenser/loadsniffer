@@ -115,7 +115,6 @@ var addLine = function(container, linkSource) {
 }
 var addLinks = function(videoLinks) {
     let container = document.getElementById("content");
-    container.style.cursor = 'pointer';
     for (let i = 0; i < videoLinks.length; ++i) {
         addLine(container, videoLinks[i]);
     }
@@ -136,7 +135,6 @@ var UpdateUPNPStatus = function(data) {
 }
 var UpdateBTStatus = function(data) {
     let container = document.getElementById("bt");
-    container.style.cursor = 'pointer';
     container.textContent = '';
     for (let i = 0; i < data.length; i++) {
         let title = document.createElement("span");

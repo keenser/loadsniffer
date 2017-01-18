@@ -13,6 +13,7 @@ body {
     font-family: 'Helvetica Neue', 'Lucida Grande', sans-serif;
     font-size: 75%;
     overflow-x: hidden;
+    -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
 
 h1 {
@@ -27,6 +28,7 @@ span {
     padding-left: 10px;
     padding-right: 10px;
     margin: 1px;
+    cursor: pointer;
 }
 
 .content div {
