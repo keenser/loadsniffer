@@ -257,9 +257,9 @@ class TorrentStream(static.File):
         def torrent_added_alert(alert):
             if alert.handle.get_torrent_info():
                 metadata_received_alert(alert)
-            else:
-                self._handle_alert([Files_List_Update_Alert(self.list_files())])
-            #    alert.handle.resume()
+
+        def tracker_announce_alert(alert):
+            self._handle_alert([Files_List_Update_Alert(self.list_files())])
 
         def torrent_removed_alert(alert):
             info_hash = str(alert.handle.info_hash())
@@ -308,6 +308,7 @@ class TorrentStream(static.File):
         #self.add_alert_handler('cache_flushed_alert', cache_flushed_alert)
         self.add_alert_handler('torrent_finished_alert', torrent_finished_alert)
         self.add_alert_handler('save_resume_data_alert', save_resume_data_alert)
+        self.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")

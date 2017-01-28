@@ -232,14 +232,13 @@ class WS(WebSocketServerProtocol):
     def btfileslist(self, infiles):
         import socket
         import os.path
-        import urllib
         prefix = 'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880')
         response = []
         for handle in infiles:
             data = {}
             data['info_hash'] = handle['info_hash']
             data['title'] = handle['title']
-            data['files'] = [{'title': os.path.basename(i), 'url': prefix + urllib.quote(i.encode("utf-8"))} for i in self.videofiles(handle['files'])]
+            data['files'] = [{'title': os.path.basename(i), 'url': prefix + urllib.quote(i)} for i in self.videofiles(handle['files'])]
             response.append(data)
         return response
 
@@ -269,7 +268,6 @@ class WS(WebSocketServerProtocol):
         super(WS, self).sendMessage(json.dumps(request))
 
     def onMessage(self, payload, isBinary):
-        print("WS onMessage", payload)
         jsondata = json.loads(payload)
         if jsondata.get('action') == 'play':
             data = jsondata.pop('request', {})
