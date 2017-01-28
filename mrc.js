@@ -39,7 +39,7 @@ function MRCServer(url, handler) {
     }
     mrc.sendMessage = function(data, callback) {
         console.debug('websocket >', data);
-        if (websocket.readyState) {
+        if (websocket && websocket.readyState) {
             let senddata = data;
             if (callback !== undefined) {
                 let currentid = uid++;

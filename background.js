@@ -1,7 +1,7 @@
 var urllib = []
 var btlib = []
-var upnpstatus = null
-var currenttabid = null
+var upnpstatus = null 
+var currenttabid = null 
 var get = function(url, callback) {
     var xmlRequest = new XMLHttpRequest();
     xmlRequest.open('GET', url, true);
@@ -93,7 +93,7 @@ var HDSListener = function(tabid, url, title, details, callback) {
 var f4mListener = function(tabid, url, title, details, callback) {
     console.log("f4mListener:", tabid, title, url, details.type);
     get(url, function(data) {
-        xml = data.responseXML || null;
+        xml = data.responseXML || null ;
         if (!xml) {
             return;
         }
@@ -197,11 +197,11 @@ var UpdateUPNPStatus = function(data) {
 }
 var UpdateTabLib = function(id, data) {
     urllib[id] = urllib[id] || []
-    if (data !== null) {
+    if (typeof(data) === 'object' && data) {
         console.log('UpdateTabLib', data);
         for (let i = 0; i < urllib[id].length; i++) {
             if (urllib[id][i].url === data.url) {
-                return null;
+                return null ;
             }
         }
         urllib[id].push(data);
@@ -229,7 +229,7 @@ var onHeadersReceived = function(callback, urlfilter) {
                 callback(id, details.url, tab.title, details, UpdateTabLib);
             });
         }
-        return null;
+        return null ;
     }
     chrome.tabs.onRemoved.addListener(function(tabId) {
         console.log('remove tab', tabId);
@@ -266,7 +266,9 @@ function context_onclick(info, tab) {
             url: info.linkUrl
         }
     }, function(data) {
-        UpdateTabLib(tab.id, data);
+        if (data.response !== 'done') {
+            UpdateTabLib(tab.id, data.response);
+        }
     });
 }
 var onStartupOrOnInstalledListener = function() {
@@ -289,7 +291,7 @@ var onStartupOrOnInstalledListener = function() {
         });
     }, function() {
         console.log('mrc disconnected');
-        UpdateUPNPStatus(null);
+        UpdateUPNPStatus(null );
         chrome.browserAction.setIcon({
             path: {
                 "128": "icons/grey_128x128.png",
@@ -314,8 +316,8 @@ chrome.extension.onMessage.addListener(function(message, sender, f_callback) {
             btlib: btlib,
             upnpstatus: upnpstatus
         });
-    } else if (message.action == 'play') {
-        console.log('play', message);
+    } else if (message.request !== undefined) {
+        console.log(message.action, message);
         mrc.sendMessage(message);
     }
 });

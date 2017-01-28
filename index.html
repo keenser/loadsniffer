@@ -15,7 +15,7 @@ var AddInput = function() {
         }
     },
     function(data) {
-        if (data['response']) {
+        if (data.response === 'done') {
             input.value = '';
         }
     }); 

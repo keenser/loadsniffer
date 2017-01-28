@@ -6,6 +6,7 @@ chrome.tabs.getSelected(null, function(tab) {
         action: "tabid",
         tabid: tabid
     }, function(data) {
+        console.log('tabid', data);
         addLinks(data.urllib);
         UpdateBTStatus(data.btlib);
         UpdateUPNPStatus(data.upnpstatus);
