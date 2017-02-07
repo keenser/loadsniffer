@@ -68,9 +68,9 @@ class UPnPctrl(object):
 
         mediadevice = MediaDevice(device)
         self.mediadevices[device.get_usn()] = mediadevice
-        if not self.device:
-            self.device = mediadevice
-            self.trigger_callbacks()
+        #if not self.device:
+        self.device = mediadevice
+        self.trigger_callbacks()
 
         device.client.av_transport.subscribe_for_variable('CurrentTrackMetaData', self.state_variable_change)
         device.client.av_transport.subscribe_for_variable('TransportState', self.state_variable_change)
