@@ -108,6 +108,7 @@ class DynamicTorrentProducer(static.StaticProducer):
                         self.priority_window += 1
                     window += 1
                 else:
+                    self.fileinfo.handle.set_piece_deadline(window, 0)
                     self.fileinfo.handle.piece_priority(window, priority)
                     window += 1
                     break
@@ -164,7 +165,6 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             self.read_piece()
         else:
             self.cansend = True
-            self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0)
 
 
 class TorrentProducer(StaticTorrentProducer):
@@ -215,6 +215,7 @@ class TorrentStream(static.File):
         session_settings.strict_end_game_mode = False
         session_settings.announce_to_all_tiers = True
         session_settings.announce_to_all_trackers = True
+        session_settings.upload_rate_limit = 1024 * 1024 / 8
         session.set_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
@@ -291,11 +292,8 @@ class TorrentStream(static.File):
         def save_resume_data_alert(alert):
             print("save_resume_data_alert", alert.handle.get_torrent_info().name())
             try:
-                resume_data = dict(alert.resume_data)
-                resume_data.pop('piece_priority', None)
-                resume_data.pop('paused', None)
                 with open(alert.handle.save_path() + "/" + alert.handle.get_torrent_info().name() + ".fastresume", 'wb') as fd:
-                    fd.write(libtorrent.bencode(resume_data))
+                    fd.write(libtorrent.bencode(alert.resume_data))
             except (IOError, EOFError) as e:
                 print("Unable to save fastresume", e)
 
@@ -327,7 +325,6 @@ class TorrentStream(static.File):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
                 for handler in self._alert_handlers.get(what, []):
                     handler(alert)
-        self.session.pop_alerts()
 
     def save_resume_data(self, handle):
         if handle.is_valid() and handle.has_metadata() and handle.need_save_resume_data():
@@ -354,6 +351,7 @@ class TorrentStream(static.File):
         add_torrent_params = {}
         if resume_data:
             add_torrent_params['resume_data'] = resume_data
+            add_torrent_params['flag_override_resume_data'] = True
         if url:
             add_torrent_params['url'] = url
         if len(add_torrent_params):
@@ -428,6 +426,8 @@ class TorrentStream(static.File):
     #    return sorted(self._files_list)
 
     def status(self):
+        def space_break(string, length):
+            return ' '.join(string[i:i+length] for i in xrange(0,len(string),length))
         status = {}
         sst = self.session.status()
         status['dht_nodes'] = sst.dht_nodes
@@ -447,7 +447,7 @@ class TorrentStream(static.File):
                         piece_map += '*'
                     else:
                         piece_map += str(handle.piece_priority(piece_index))
-                s['pieces'] = piece_map
+                s['pieces'] = space_break(piece_map, 100)
                 file_map = ''
                 for file_index in range(handle.get_torrent_info().num_files()):
                     file_map += str(handle.file_priority(file_index))

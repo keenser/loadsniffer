@@ -20,6 +20,7 @@ import urllib
 import torrentstream
 import logging
 import logging.handlers
+import socket
 
 class MediaDevice(object):
     def __init__(self, device):
@@ -170,6 +171,7 @@ class Info(Resource):
     @staticmethod
     def youtube_dl(url):
         #try:
+            print('youtube_dl', url)
             ydl = youtube_dl.YoutubeDL(
                 params={
                     'quiet': True,
@@ -232,7 +234,7 @@ class WS(WebSocketServerProtocol):
     def btfileslist(self, infiles):
         import socket
         import os.path
-        prefix = 'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8880')
+        prefix = 'http://{}:{}/bt/get?url='.format(socket.gethostbyname(self.http_request_host), '8882')
         response = []
         for handle in infiles:
             data = {}
@@ -326,7 +328,7 @@ class WS(WebSocketServerProtocol):
             self.sendMessage(message, jsondata)
 
 upnp = UPnPctrl()
-torrent = torrentstream.TorrentStream(save_path='/media/sda/tmp/')
+torrent = torrentstream.TorrentStream(save_path='/opt/tmp/')
 
 def start():
     root = Root()
@@ -338,8 +340,8 @@ def start():
     reactor.listenTCP(8881, ws)
 #    root.putChild("ws", WebSocketResource(ws))
 
-    site = server.Site(root)
-    reactor.listenTCP(8880, site)
+    site = reactor.listenTCP(8882, server.Site(root))
+    site.socket.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
 
 reactor.callWhenRunning(start)
 reactor.run()
