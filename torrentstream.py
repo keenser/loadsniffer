@@ -291,6 +291,9 @@ class TorrentStream(static.File):
         def torrent_finished_alert(alert):
             self.save_resume_data(alert.handle)
 
+        def file_completed_alert(alert):
+            self.save_resume_data(alert.handle)
+
         def save_resume_data_alert(alert):
             print("save_resume_data_alert", alert.handle.get_torrent_info().name())
             try:
@@ -307,6 +310,7 @@ class TorrentStream(static.File):
         #self.add_alert_handler('files_list_update_alert', files_list_update_alert)
         #self.add_alert_handler('cache_flushed_alert', cache_flushed_alert)
         self.add_alert_handler('torrent_finished_alert', torrent_finished_alert)
+        self.add_alert_handler('file_completed_alert', file_completed_alert)
         self.add_alert_handler('save_resume_data_alert', save_resume_data_alert)
         self.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
 
