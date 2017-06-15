@@ -33,7 +33,8 @@ class DynamicTorrentProducer(static.StaticProducer):
     def read_piece_alert(self, alert):
         print("read_piece_alert", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
-        self.resumeProducing()
+        if self.cansend:
+            self.resumeProducing()
 
     def read_piece(self):
         print("read_piece", self.piece.start, self.piece.start + self.lastoffset - self.offset)
