@@ -25,7 +25,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         self.fileinfo = fileinfo
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
-        self.lastoffset = self.offset + self.size
+        self.lastoffset = self.offset + self.size - 1
         self.priority_window = None
         self.buffer = {}
         self.cansend = True
