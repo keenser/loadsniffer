@@ -204,12 +204,16 @@ class Info(Resource):
             return server.NOT_DONE_YET
         return "no 'url' parameter pecified"
 
-class Play(Resource):
+class Play(Resource, object):
+    def __init__(self, upnp):
+        self.upnp = upnp
+        super(Play, self).__init__()
+
     def render_GET(self, request):
         url = request.args.get('url',[None])[0]
         if url:
             print("push to play url:", request.args.get('url'))
-            upnp.play(url, request.args.get('title', 'Video'))
+            self.upnp.play(url, request.args.get('title', 'Video'))
             return 'play'
         return "no 'url' parameter pecified"
 
@@ -227,6 +231,11 @@ class Root(Resource):
             return f.read()
 
 class WS(WebSocketServerProtocol):
+    def __init__(self, upnp, torrent):
+        self.upnp = upnp
+        self.torrent = torrent
+        super(WS, self).__init__()
+
     @staticmethod
     def videofiles(files):
         return [i for i in files if torrentstream.TorrentStream.getTypeAndEncoding(i)[0].startswith('video')]
@@ -255,15 +264,15 @@ class WS(WebSocketServerProtocol):
         self._upnpupdate = upnpupdate
         self._btupdate = btupdate
         print("WS client connected", self.peer)
-        upnp.add_alert_handler(self._upnpupdate)
-        torrent.add_alert_handler('files_list_update_alert', self._btupdate)
+        self.upnp.add_alert_handler(self._upnpupdate)
+        self.torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self, wasClean, code, reason):
         if hasattr(self, '_upnpupdate'):
             print("WS client closed", reason , id(self._upnpupdate))
-            upnp.remove_alert_handler(self._upnpupdate)
+            self.upnp.remove_alert_handler(self._upnpupdate)
         if hasattr(self, '_btupdate'):
-            torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
+            self.torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
     def sendMessage(self, message, request):
         request['response'] = message
@@ -279,9 +288,9 @@ class WS(WebSocketServerProtocol):
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.http_request_host, urllib.quote(url), urllib.quote(data.get('cookie')))
                 print("push to play url:", url)
-                upnp.play(url, data.get('title', 'Video'))
+                self.upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
-            upnp.refresh()
+            self.upnp.refresh()
         elif jsondata.get('action') == 'search':
             data = jsondata.pop('request', {})
             url = data.get('url')
@@ -301,17 +310,17 @@ class WS(WebSocketServerProtocol):
                 self.sendMessage(message, jsondata)
             def bittorrent(message):
                 def remove_handlers():
-                    torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
-                    torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
+                    self.torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
+                    self.torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
                 def torrent_error_alert(alert):
                     self.sendMessage(None, jsondata)
                     remove_handlers()
                 def tracker_announce_alert(alert):
                     self.sendMessage('done', jsondata)
                     remove_handlers()
-                if torrent.add_torrent(url):
-                    torrent.add_alert_handler('torrent_error_alert', torrent_error_alert)
-                    torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
+                if self.torrent.add_torrent(url):
+                    self.torrent.add_alert_handler('torrent_error_alert', torrent_error_alert)
+                    self.torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
                 else:
                     self.sendMessage(None, jsondata)
             d = threads.deferToThread(Info.youtube_dl, url)
@@ -320,23 +329,23 @@ class WS(WebSocketServerProtocol):
         elif jsondata.get('action') == 'rm':
             data = jsondata.pop('request', {})
             url = data.get('url')
-            torrent.remove_torrent(url)
+            self.torrent.remove_torrent(url)
         elif jsondata.get('action') == 'btstatus':
-            self.sendMessage(self.btfileslist(torrent.list_files()), jsondata)
+            self.sendMessage(self.btfileslist(self.torrent.list_files()), jsondata)
         elif jsondata.get('action') == 'upnpstatus':
-            message = upnp.device.status if upnp.device else None
+            message = self.upnp.device.status if self.upnp.device else None
             self.sendMessage(message, jsondata)
 
-upnp = UPnPctrl()
-torrent = torrentstream.TorrentStream(save_path='/opt/tmp/')
 
 def start():
+    upnp = UPnPctrl()
+    torrent = torrentstream.TorrentStream(save_path='/opt/tmp/')
     root = Root()
     root.putChild("info", Info())
-    root.putChild("play", Play())
+    root.putChild("play", Play(upnp))
     root.putChild("bt", torrent)
     ws = WebSocketServerFactory()
-    ws.protocol = WS
+    ws.protocol = lambda: WS(upnp, torrent)
     reactor.listenTCP(8881, ws)
 #    root.putChild("ws", WebSocketResource(ws))
 
