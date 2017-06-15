@@ -74,6 +74,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         print("stopProducing")
         self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
+        del self.buffer
 
     def start(self):
         self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
