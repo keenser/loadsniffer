@@ -37,7 +37,7 @@ class DynamicTorrentProducer(static.StaticProducer):
             self.resumeProducing()
 
     def read_piece(self):
-        print("read_piece", self.piece.start, self.piece.start + self.lastoffset - self.offset)
+        print("read_piece", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
         buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset]
         self.request.write(buffer)
         self.offset += len(buffer)
@@ -57,18 +57,16 @@ class DynamicTorrentProducer(static.StaticProducer):
         self.slide()
 
     def resumeProducing(self):
-        print("index", self.piece.piece)
+        print("index", self.piece.piece, self.buffer.keys())
         for window in range(self.piece.piece, min(self.lastpiece.piece + 1, self.piece.piece + len(self.prioritymask))):
             if not window in self.buffer and self.fileinfo.handle.have_piece(window):
                 self.buffer[window] = None
                 self.fileinfo.handle.read_piece(window)
-                #self.fileinfo.handle.set_piece_deadline(window, 0, libtorrent.deadline_flags.alert_when_available)
         if self.piece.piece in self.buffer and self.buffer[self.piece.piece]:
             self.cansend = False
             self.read_piece()
         else:
             self.cansend = True
-        #self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0, libtorrent.deadline_flags.alert_when_available)
 
     def stopProducing(self):
         print("stopProducing")
@@ -101,19 +99,23 @@ class DynamicTorrentProducer(static.StaticProducer):
         if offset is not None:
             self.priority_window = offset
         window = self.priority_window
+        data = []
         for priority in self.prioritymask:
             while True:
                 if window > self.lastpiece.piece:
+                    print('slide', data)
                     return
                 if self.fileinfo.handle.have_piece(window):
                     if window == self.priority_window:
                         self.priority_window += 1
                     window += 1
                 else:
-                    self.fileinfo.handle.set_piece_deadline(window, 0)
+                    data.append(window)
+                    self.fileinfo.handle.set_piece_deadline(window, 3000)
                     self.fileinfo.handle.piece_priority(window, priority)
                     window += 1
                     break
+        print('slide', data)
 
 
 # speedup reading pieces using direct access to file on filesystem
@@ -436,6 +438,7 @@ class TorrentStream(static.File):
             return ' '.join(string[i:i+length] for i in xrange(0,len(string),length))
         status = {}
         sst = self.session.status()
+        status['version'] = libtorrent.version
         status['dht_nodes'] = sst.dht_nodes
         cst = self.session.get_cache_status()
         status['cache_size'] = cst.cache_size
