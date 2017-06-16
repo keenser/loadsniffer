@@ -6,8 +6,24 @@ Communicates with media renderers on local network using coherence(prefer cohen 
 Find media resources from web pages using youtube-dl which can be sended to media renderers.
 Uses torrentstream module to get access to media resources inside torrents.
 Uses websocket(autobahn) to communicate with chrome extension
+
+On server side(your home media server):
+
+$ sudo apt-get install python-libtorrent python-autobahn python-livestreamer
+
+$ sudo pip install youtube-dl Cohen
+
+$ ./mrc.py &
+
+On client side(your notebook):
+
+goto http://<serverip>:8882 (manage torrents only)
+
+or add current project directory as chrome extencion for grab media resources from web pages 
+
 # torrentstream.py
-Uses libtorrent and twisted.web to stream files inside torrents over http
+Uses libtorrent and twisted.web to stream files inside torrents over http. Can be used as standalone server.
+
 Example:
 
    $ torrentstream.py &
