@@ -17,7 +17,7 @@ $ ./mrc.py &
 
 On client side(your notebook):
 
-goto http://<serverip>:8882 (manage torrents only)
+goto http://serverip:8882 (manage torrents only)
 
 or add current project directory as chrome extencion for grab media resources from web pages 
 
