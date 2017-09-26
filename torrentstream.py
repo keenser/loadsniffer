@@ -461,6 +461,7 @@ class TorrentStream(static.File):
                 for file_index in range(handle.get_torrent_info().num_files()):
                     file_map += str(handle.file_priority(file_index))
                 s['files'] = file_map
+                s['name'] = handle.get_torrent_info().name()
             s['has_metadata'] = handle.has_metadata()
             st = handle.status()
             s['paused'] = st.paused
@@ -566,6 +567,7 @@ class TorrentStream(static.File):
                 self.type, self.encoding = self.getTypeAndEncoding(url)
 
                 request.setHeader('accept-ranges', 'bytes')
+                request.setHeader('Content-Disposition', 'inline; filename="{}"'.format(os.path.basename(url)))
 
                 self.fileForReading = self._files_list[url]
                 offset, size = self.makeProducer(request)
