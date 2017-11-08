@@ -22,19 +22,21 @@ class DynamicTorrentProducer(static.StaticProducer):
         print("DynamicTorrentProducer", offset, size)
         self.stream = stream
         self.request = request
+        self.transport = request.channel
         self.fileinfo = fileinfo
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
         self.lastoffset = self.offset + self.size - 1
         self.priority_window = None
         self.buffer = {}
-        self.cansend = True
+        self.paused = False
 
     def read_piece_alert(self, alert):
         print("read_piece_alert", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
-        if self.cansend:
-            self.resumeProducing()
+        if self.paused:
+            self.paused = False
+            self.transport.resumeProducing()
 
     def read_piece(self):
         print("read_piece", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
@@ -52,8 +54,10 @@ class DynamicTorrentProducer(static.StaticProducer):
             self.stopProducing()
 
     def piece_finished_alert(self, alert):
-        if self.cansend:
-            self.resumeProducing()
+        print("piece_finished_alert")
+        if self.paused:
+            self.paused = False
+            self.transport.resumeProducing()
         self.slide()
 
     def resumeProducing(self):
@@ -63,10 +67,10 @@ class DynamicTorrentProducer(static.StaticProducer):
                 self.buffer[window] = None
                 self.fileinfo.handle.read_piece(window)
         if self.piece.piece in self.buffer and self.buffer[self.piece.piece]:
-            self.cansend = False
             self.read_piece()
         else:
-            self.cansend = True
+            self.paused = True
+            self.transport.pauseProducing()
 
     def stopProducing(self):
         print("stopProducing")
@@ -93,7 +97,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         self.fileinfo.handle.resume()
         self.slide(self.piece.piece)
 
-        self.request.registerProducer(self, 0)
+        self.request.registerProducer(self, False)
 
     def slide(self, offset = None):
         if offset is not None:
@@ -165,10 +169,10 @@ class StaticTorrentProducer(DynamicTorrentProducer):
     def resumeProducing(self):
         print("index", self.piece.piece)
         if self.fileinfo.handle.have_piece(self.piece.piece):
-            self.cansend = False
             self.read_piece()
         else:
-            self.cansend = True
+            self.paused = True
+            self.transport.pauseProducing()
 
 
 class TorrentProducer(StaticTorrentProducer):
