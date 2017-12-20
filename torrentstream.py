@@ -17,6 +17,98 @@ import gc
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
 
+class StreamTorrentProducer(static.StaticProducer):
+    def __init__(self, stream, request, fileinfo, offset=0, size=None):
+        print("StreamTorrentProducer", offset, size)
+        self.stream = stream
+        self.request = request
+        self.transport = request.channel
+        self.fileinfo = fileinfo
+        self.offset = offset
+        self.size = size or fileinfo.info.size - offset
+        self.lastoffset = self.offset + self.size - 1
+        self.priority_window = None
+        self.paused = False
+
+    def read_piece_alert(self, alert):
+        print("read_piece_alert", alert.piece, alert.size)
+        buffer = alert.buffer[self.piece.start:self.piece.start + self.lastoffset - self.offset]
+        self.request.write(buffer)
+        self.offset += len(buffer)
+
+        if self.offset < self.lastoffset:
+            # move to next piece
+            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
+            if not self.paused:
+                self.fileinfo.handle.read_piece(self.piece.piece)
+        elif self.request:
+            self.request.unregisterProducer()
+            self.request.finish()
+            self.stopProducing()
+
+    def piece_finished_alert(self, alert):
+        print("piece_finished_alert")
+        self.slide()
+
+    def pauseProducing(self):
+        print("pauseProducing", self.piece.piece)
+        self.paused = True
+
+    def resumeProducing(self):
+        print("resumeProducing", self.piece.piece)
+        self.paused = False
+        self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0, libtorrent.deadline_flags.alert_when_available)
+
+    def stopProducing(self):
+        print("stopProducing")
+        self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
+        self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
+
+    def start(self):
+        self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
+        self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
+        self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
+        self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
+        self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
+        print("start", self.piece.piece, self.lastpiece.piece, self.piecelength)
+
+        # priority window size 4Mb * 8
+        priorityblock = (4 * 1024 * 1024 )/ self.piecelength
+        # piece_length more than 4Mb ?
+        if priorityblock < 1:
+            priorityblock = 1
+        self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
+        print("prioritymask", self.prioritymask)
+
+        self.fileinfo.handle.resume()
+        self.slide(self.piece.piece)
+
+        self.request.registerProducer(self, True)
+
+        self.resumeProducing()
+
+    def slide(self, offset = None):
+        if offset is not None:
+            self.priority_window = offset
+        window = self.priority_window
+        data = []
+        for priority in self.prioritymask:
+            while True:
+                if window > self.lastpiece.piece:
+                    print('slide', data)
+                    return
+                if self.fileinfo.handle.have_piece(window):
+                    if window == self.priority_window:
+                        self.priority_window += 1
+                    window += 1
+                else:
+                    data.append(window)
+                    self.fileinfo.handle.piece_priority(window, priority)
+                    window += 1
+                    break
+        print('slide', data)
+
+
 class DynamicTorrentProducer(static.StaticProducer):
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
         print("DynamicTorrentProducer", offset, size)
