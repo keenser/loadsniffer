@@ -129,6 +129,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         if self.paused:
             self.paused = False
             self.transport.resumeProducing()
+            self.resumeProducing()
 
     def read_piece(self):
         print("read_piece", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
@@ -150,6 +151,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         if self.paused:
             self.paused = False
             self.transport.resumeProducing()
+            self.resumeProducing()
         self.slide()
 
     def resumeProducing(self):
