@@ -185,6 +185,8 @@ class DynamicTorrentProducer(static.StaticProducer):
         # piece_length more than 4Mb ?
         if priorityblock < 1:
             priorityblock = 1
+        elif priorityblock > 8:
+            priorityblock = 8
         self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
         print("prioritymask", self.prioritymask)
 
