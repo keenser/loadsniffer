@@ -32,7 +32,7 @@ class MediaDevice(object):
 
 class UPnPctrl(object):
     def __init__(self):
-        self.coherence = Coherence({'logmode':'warning'})
+        self.coherence = Coherence({'logmode':'warn'})
         self.control_point = ControlPoint(self.coherence, auto_client=['MediaRenderer'])
         #self.control_point.connect(self.media_renderer_found, 'Coherence.UPnP.ControlPoint.MediaRenderer.detected')
         #self.control_point.connect(self.media_renderer_removed, 'Coherence.UPnP.ControlPoint.MediaRenderer.removed')

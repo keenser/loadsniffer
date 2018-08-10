@@ -221,7 +221,7 @@ class DynamicTorrentProducer(static.StaticProducer):
 # speedup reading pieces using direct access to file on filesystem
 class StaticTorrentProducer(DynamicTorrentProducer):
     def read_piece_1(self):
-        with open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb') as fileObject:
+        with open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), 'rb') as fileObject:
             fileObject.seek(self.offset)
             data = fileObject.read(self.piecelength - self.piece.start)
 
@@ -239,7 +239,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         # probably file exsists on filesystem because have_piece()==True success check
         # now we can open it
         if not hasattr(self, 'fileObject') or self.fileObject.closed:
-            self.fileObject = open(self.fileinfo.handle.save_path() + self.fileinfo.info.path, 'rb')
+            self.fileObject = open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), 'rb')
             self.fileObject.seek(self.offset)
 
         data = self.fileObject.read(self.piecelength - self.piece.start)
