@@ -557,10 +557,7 @@ class TorrentStream():
         return web.json_response(ret)
 
 def main():
-    import concurrent
     loop = asyncio.get_event_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(5)
-    loop.set_default_executor(executor)
 
     httpport=9999
     app = web.Application(loop=loop)
@@ -576,10 +573,9 @@ def main():
         loop.run_forever()
     except KeyboardInterrupt:
         print("Shutting Down!")
-        #torrentstream.shutdown()
+        torrentstream.shutdown()
         loop.run_until_complete(handler.shutdown(60.0))
         loop.close()
-        executor.shutdown()
 
 if __name__ == '__main__':
     main()
