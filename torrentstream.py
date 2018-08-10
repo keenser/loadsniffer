@@ -1,178 +1,73 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 #
-# Torrent Stream based on libtorrent
 
+#import subprocess
+#from functools import partial
+import mimetypes
 import libtorrent
 import json
 import glob
 import os
-from twisted.internet import reactor, defer
-from twisted.web import server, static, http
-from twisted.web.resource import Resource
+import asyncio
+import aiofiles
+from aiohttp import web
 from collections import namedtuple
-import gc
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
-
-class StreamTorrentProducer(static.StaticProducer):
-    def __init__(self, stream, request, fileinfo, offset=0, size=None):
-        print("StreamTorrentProducer", offset, size)
-        self.stream = stream
-        self.request = request
-        self.transport = request.channel
-        self.fileinfo = fileinfo
-        self.offset = offset
-        self.size = size or fileinfo.info.size - offset
-        self.lastoffset = self.offset + self.size - 1
-        self.priority_window = None
-        self.paused = False
-
-    def read_piece_alert(self, alert):
-        print("read_piece_alert", alert.piece, alert.size)
-        buffer = alert.buffer[self.piece.start:self.piece.start + self.lastoffset - self.offset]
-        self.request.write(buffer)
-        self.offset += len(buffer)
-
-        if self.offset < self.lastoffset:
-            # move to next piece
-            self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-            if not self.paused:
-                self.fileinfo.handle.read_piece(self.piece.piece)
-        elif self.request:
-            self.request.unregisterProducer()
-            self.request.finish()
-            self.stopProducing()
-
-    def piece_finished_alert(self, alert):
-        print("piece_finished_alert")
-        self.slide()
-
-    def pauseProducing(self):
-        print("pauseProducing", self.piece.piece)
-        self.paused = True
-
-    def resumeProducing(self):
-        print("resumeProducing", self.piece.piece)
-        self.paused = False
-        self.fileinfo.handle.set_piece_deadline(self.piece.piece, 0, libtorrent.deadline_flags.alert_when_available)
-
-    def stopProducing(self):
-        print("stopProducing")
-        self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
-        self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
-
-    def start(self):
-        self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
-        self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
-        self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-        self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
-        self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
-        print("start", self.piece.piece, self.lastpiece.piece, self.piecelength)
-
-        # priority window size 4Mb * 8
-        priorityblock = (4 * 1024 * 1024 )/ self.piecelength
-        # piece_length more than 4Mb ?
-        if priorityblock < 1:
-            priorityblock = 1
-        self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
-        print("prioritymask", self.prioritymask)
-
-        self.fileinfo.handle.resume()
-        self.slide(self.piece.piece)
-
-        self.request.registerProducer(self, True)
-
-        self.resumeProducing()
-
-    def slide(self, offset = None):
-        if offset is not None:
-            self.priority_window = offset
-        window = self.priority_window
-        data = []
-        for priority in self.prioritymask:
-            while True:
-                if window > self.lastpiece.piece:
-                    print('slide', data)
-                    return
-                if self.fileinfo.handle.have_piece(window):
-                    if window == self.priority_window:
-                        self.priority_window += 1
-                    window += 1
-                else:
-                    data.append(window)
-                    self.fileinfo.handle.piece_priority(window, priority)
-                    window += 1
-                    break
-        print('slide', data)
-
-
-class DynamicTorrentProducer(static.StaticProducer):
+class DynamicTorrentProducer(object):
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
         print("DynamicTorrentProducer", offset, size)
         self.stream = stream
         self.request = request
-        self.transport = request.channel
         self.fileinfo = fileinfo
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
         self.lastoffset = self.offset + self.size - 1
         self.priority_window = None
         self.buffer = {}
-        self.paused = False
 
     def read_piece_alert(self, alert):
         print("read_piece_alert", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
-        if self.paused:
-            self.paused = False
-            self.transport.resumeProducing()
-            self.resumeProducing()
+        self.request.resume()
 
-    def read_piece(self):
+    def piece_finished_alert(self, alert):
+        print("piece_finished_alert")
+        self.slide()
+        self.request.resume()
+
+    async def read_piece(self):
         print("read_piece", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
         buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset]
         self.request.write(buffer)
+        await self.request.drain()
         self.offset += len(buffer)
         del self.buffer[self.piece.piece]
 
         if self.offset < self.lastoffset:
             # move to next piece
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-        elif self.request:
-            self.request.unregisterProducer()
-            self.request.finish()
-            self.stopProducing()
+        else:
+            raise asyncio.CancelledError
 
-    def piece_finished_alert(self, alert):
-        print("piece_finished_alert")
-        if self.paused:
-            self.paused = False
-            self.transport.resumeProducing()
-            self.resumeProducing()
-        self.slide()
-
-    def resumeProducing(self):
+    async def resumeProducing(self):
         print("index", self.piece.piece, self.buffer.keys())
         for window in range(self.piece.piece, min(self.lastpiece.piece + 1, self.piece.piece + len(self.prioritymask))):
             if not window in self.buffer and self.fileinfo.handle.have_piece(window):
                 self.buffer[window] = None
                 self.fileinfo.handle.read_piece(window)
         if self.piece.piece in self.buffer and self.buffer[self.piece.piece]:
-            self.read_piece()
-        else:
-            self.paused = True
-            self.transport.pauseProducing()
+            await self.read_piece()
 
-    def stopProducing(self):
+    async def stopProducing(self):
         print("stopProducing")
         self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
-        del self.buffer
 
-    def start(self):
+    async def start(self):
         self.stream.add_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.add_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
@@ -181,7 +76,7 @@ class DynamicTorrentProducer(static.StaticProducer):
         print("start", self.piece.piece, self.lastpiece.piece, self.piecelength)
 
         # priority window size 4Mb * 8
-        priorityblock = (4 * 1024 * 1024 )/ self.piecelength
+        priorityblock = int((4 * 1024 * 1024 )/ self.piecelength)
         # piece_length more than 4Mb ?
         if priorityblock < 1:
             priorityblock = 1
@@ -192,8 +87,6 @@ class DynamicTorrentProducer(static.StaticProducer):
 
         self.fileinfo.handle.resume()
         self.slide(self.piece.piece)
-
-        self.request.registerProducer(self, False)
 
     def slide(self, offset = None):
         if offset is not None:
@@ -220,55 +113,52 @@ class DynamicTorrentProducer(static.StaticProducer):
 
 # speedup reading pieces using direct access to file on filesystem
 class StaticTorrentProducer(DynamicTorrentProducer):
-    def read_piece_1(self):
-        with open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), 'rb') as fileObject:
-            fileObject.seek(self.offset)
-            data = fileObject.read(self.piecelength - self.piece.start)
+    async def read_piece_1(self):
+        async with aiofiles.open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), mode='rb') as fileObject:
+            await fileObject.seek(self.offset)
+            data = await fileObject.read(self.piecelength - self.piece.start)
 
             if data:
                 self.offset += len(data)
                 self.request.write(data)
+                await self.request.drain()
+            del data
+
             if self.offset < self.lastoffset:
                 self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-            elif self.request:
-                self.request.unregisterProducer()
-                self.request.finish()
-                self.stopProducing()
+            else:
+                raise asyncio.CancelledError
         
-    def read_piece(self):
+    async def read_piece(self):
         # probably file exsists on filesystem because have_piece()==True success check
         # now we can open it
         if not hasattr(self, 'fileObject') or self.fileObject.closed:
-            self.fileObject = open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), 'rb')
-            self.fileObject.seek(self.offset)
+            self.fileObject = await aiofiles.open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), mode='rb')
+            await self.fileObject.seek(self.offset)
 
-        data = self.fileObject.read(self.piecelength - self.piece.start)
+        data = await self.fileObject.read(self.piecelength - self.piece.start)
  
         if data:
             self.offset += len(data)
             self.request.write(data)
+            await self.request.drain()
         del data
 
         if self.offset < self.lastoffset:
             # move to next piece
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-        elif self.request:
-            self.request.unregisterProducer()
-            self.request.finish()
-            self.stopProducing()
+        else:
+            raise asyncio.CancelledError
 
-    def stopProducing(self):
+    async def stopProducing(self):
         if hasattr(self, 'fileObject') and not self.fileObject.closed:
-            self.fileObject.close()
-        super(StaticTorrentProducer, self).stopProducing()
+            await self.fileObject.close()
+        await super(StaticTorrentProducer, self).stopProducing()
 
-    def resumeProducing(self):
+    async def resumeProducing(self):
         print("index", self.piece.piece)
         if self.fileinfo.handle.have_piece(self.piece.piece):
-            self.read_piece()
-        else:
-            self.paused = True
-            self.transport.pauseProducing()
+            await self.read_piece()
 
 
 class TorrentProducer(StaticTorrentProducer):
@@ -285,8 +175,8 @@ class Files_List_Update_Alert(object):
     def message(self):
         return self._message.format(len(self.files))
 
-class TorrentStream(static.File):
-    isLeaf = True
+
+class TorrentStream():
     PAUSE = 0
     LOW = 1
     NORMAL = 4
@@ -296,11 +186,15 @@ class TorrentStream(static.File):
         self._files_list = {}
         self.options = options
         self.options.setdefault('save_path', '/tmp/')
+        self.loop = options['loop']
+        self.queue_event = asyncio.Event()
+
+        self.http = web.Application()
+        self.http.router.add_get('/{action:.*}', self.render_GET)
 
         print("libtorrent", libtorrent.version)
         self.session = session = libtorrent.session()
-        #reactor.addSystemEventTrigger('before', 'shutdown', self.shutdown)
-        reactor.callInThread(self._alert_queue_loop)
+        self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
 
         session.set_alert_mask(
                 libtorrent.alert.category_t.tracker_notification |
@@ -319,7 +213,7 @@ class TorrentStream(static.File):
         session_settings.strict_end_game_mode = False
         session_settings.announce_to_all_tiers = True
         session_settings.announce_to_all_trackers = True
-        session_settings.upload_rate_limit = 1024 * 1024 / 8
+        session_settings.upload_rate_limit = int(1024 * 1024 / 8)
         session.set_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
@@ -331,14 +225,6 @@ class TorrentStream(static.File):
         encryption_settings.allowed_enc_level = libtorrent.enc_level.both
         encryption_settings.prefer_rc4 = True
         session.set_pe_settings(encryption_settings)
-
-        #try:
-        #    with open("session.state", 'rb') as fd:
-        #        state = libtorrent.bdecode(fd.read())
-        #except (IOError, EOFError, RuntimeError) as e:
-        #    print("Unable to load session.state", e)
-        #else:
-        #    self.session.load_state(state)
 
         for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
             try:
@@ -371,24 +257,10 @@ class TorrentStream(static.File):
             for path, handle in self._files_list.items():
                 if str(handle.handle.info_hash()) == info_hash:
                     del self._files_list[path]
-            self._handle_alert([Files_List_Update_Alert(self.list_files())])
+                    self._handle_alert([Files_List_Update_Alert(self.list_files())])
 
         def torrent_error_alert(alert):
             self.session.remove_torrent(alert.handle)
-
-        #def files_list_update_alert(alert):
-        #    try:
-        #        with open("session.state", 'wb') as fd:
-        #            fd.write(libtorrent.bencode(self.session.save_state()))
-        #            #fd.flush()
-        #            #os.fsync(.fileno())
-        #    except (IOError, EOFError) as e:
-        #        print("Unable to save session.state", e)
-
-        #def cache_flushed_alert(alert):
-        #    for handle in self.session.get_torrents():
-        #        self.save_resume_data(handle)
-        #    gc.collect()
 
         def torrent_finished_alert(alert):
             self.save_resume_data(alert.handle)
@@ -409,8 +281,6 @@ class TorrentStream(static.File):
         self.add_alert_handler('torrent_checked_alert', torrent_checked_alert)
         self.add_alert_handler('torrent_removed_alert', torrent_removed_alert)
         self.add_alert_handler('torrent_error_alert', torrent_error_alert)
-        #self.add_alert_handler('files_list_update_alert', files_list_update_alert)
-        #self.add_alert_handler('cache_flushed_alert', cache_flushed_alert)
         self.add_alert_handler('torrent_finished_alert', torrent_finished_alert)
         self.add_alert_handler('file_completed_alert', file_completed_alert)
         self.add_alert_handler('save_resume_data_alert', save_resume_data_alert)
@@ -418,21 +288,34 @@ class TorrentStream(static.File):
 
     def _alert_queue_loop(self):
         print("_alert_queue_loop")
-        while reactor.running:
-            if self.session.wait_for_alert(5000):
-                reactor.callLater(0, self._handle_alert, self.session.pop_alerts())
+        try:
+            while not self.queue_event.is_set():
+                if self.session.wait_for_alert(1000):
+                    self.loop.call_soon_threadsafe(self._handle_alert, self.session.pop_alerts())
+                    #asyncio.run_coroutine_threadsafe(self._handle_alert(self.session.pop_alerts()), self.loop)
+        except asyncio.CancelledError:
+            return
 
     def _handle_alert(self, alerts):
         for alert in alerts:
             if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
-                print('{0}: {1}'.format(alert.what(), alert.message()))
+                try:
+                    print('{0}: {1}'.format(alert.what(), alert.message()))
+                except:
+                    print(alert.what())
             if alert.what() in self._alert_handlers:
                 for handler in self._alert_handlers[alert.what()]:
-                    handler(alert)
+                    if asyncio.iscoroutinefunction(handler):
+                        self.loop.create_task(handler(alert))
+                    else:
+                        handler(alert)
             if hasattr(alert, 'handle'):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
                 for handler in self._alert_handlers.get(what, []):
-                    handler(alert)
+                    if asyncio.iscoroutinefunction(handler):
+                        self.loop.create_task(handler(alert))
+                    else:
+                        handler(alert)
 
     def save_resume_data(self, handle):
         if handle.is_valid() and handle.has_metadata() and handle.need_save_resume_data():
@@ -454,6 +337,8 @@ class TorrentStream(static.File):
             self._alert_handlers[alert].remove(handler)
             if not self._alert_handlers[alert]:
                 self._alert_handlers.pop(alert)
+        else:
+            print("warning remove alert handler", alert, handler)
 
     def add_torrent(self, url = None, resume_data = None):
         add_torrent_params = {}
@@ -530,12 +415,9 @@ class TorrentStream(static.File):
                 directory.append(data)
         return sorted(directory, key=lambda data: data['title'])
 
-    #def list_files(self):
-    #    return sorted(self._files_list)
-
     def status(self):
         def space_break(string, length):
-            return ' '.join(string[i:i+length] for i in xrange(0,len(string),length))
+            return ' '.join(string[i:i+length] for i in range(0,len(string),length))
         status = {}
         sst = self.session.status()
         status['version'] = libtorrent.version
@@ -579,125 +461,125 @@ class TorrentStream(static.File):
             status[info_hash] = s
         return status
 
-    @defer.inlineCallbacks
     def shutdown(self):
-        outstanding_resume_data = 0
-        for handle in self.session.get_torrents():
-            print("check", handle.get_torrent_info().name(), handle.is_valid(), handle.has_metadata(), handle.need_save_resume_data())
-            if not handle.is_valid():
-                continue
-            if not handle.has_metadata():
-                continue
-            if not handle.need_save_resume_data():
-                continue
-            handle.save_resume_data()
-            outstanding_resume_data += 1
+        self.queue_event.set()
+        self.loop.run_until_complete(asyncio.wait([self.queue_loop]))
+        print("shutdown done")
 
-        if outstanding_resume_data:
-            print("outstanding_resume_data", outstanding_resume_data)
-            lock = defer.DeferredLock()
-            def save_resume_data_alert(alert):
-                print("name", alert.handle.get_torrent_info().name())
-                outstanding_resume_data -= 1
-                if not outstanding_resume_data:
-                    lock.release()
-
-            self.add_alert_handler('save_resume_data_alert', save_resume_data_alert)
-            yield lock.acquire()
-        print("torrentstream shutdown")
-
-    @staticmethod
-    def getTypeAndEncoding(url):
-        return static.getTypeAndEncoding(url,
-                                        static.File.contentTypes,
-                                        static.File.contentEncodings,
-                                              "text/html")
-
-    def getFileSize(self):
-        return self.fileForReading.info.size
-
-    def makeProducer(self, request):
-        byteRange = request.getHeader(b'range')
-        if byteRange is None:
-            self._setContentHeaders(request)
-            request.setResponseCode(http.OK)
-            return 0, None
-        try:
-            parsedRanges = self._parseRangeHeader(byteRange)
-        except ValueError:
-            self._setContentHeaders(request)
-            request.setResponseCode(http.OK)
-            return 0, None
-
-        if len(parsedRanges) == 1:
-            offset, size = self._doSingleRangeRequest(
-                request, parsedRanges[0])
-            self._setContentHeaders(request, size)
-            return offset, size
-        else:
-            rangeInfo = self._doMultipleRangeRequest(request, parsedRanges)
-            return rangeInfo, None
-
-    def render_GET(self, request):
-        url = request.args.get('url',[None])[0]
+    async def render_GET(self, request):
+        url = request.query.get('url', None)
+        action = request.match_info.get('action')
         ret = None
 
         def help():
-            prepath = '{}:{}/{}'.format(request.host.host, request.host.port, '/'.join(request.prepath))
-            return {'example': [ '{p}/add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
-                                '{p}/get?url=file.avi'.format(p=prepath),
-                                '{p}/rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
-                                '{p}/info'.format(p=prepath),
-                                '{p}/ls'.format(p=prepath)
+            def rstrip(pattern, string):
+                return string[:-len(pattern)] if string.endswith(pattern) else string
+
+            prepath = '{}{}'.format(request.host, rstrip(action, request.path))
+            return {'example': ['{p}add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
+                                '{p}rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
+                                '{p}info'.format(p=prepath),
+                                '{p}ls'.format(p=prepath),
+                                '{p}file.avi'.format(p=prepath),
                               ]}
 
-        if len(request.postpath) == 0:
-            ret = help()
-        elif request.postpath[0] == 'add' and url:
+        if action == 'add' and url:
             self.add_torrent(url)
             ret = {'status': '{} added'.format(url)}
-        elif request.postpath[0] == 'info':
+        elif action == 'info':
             ret = self.status()
-        elif request.postpath[0] == 'ls':
+        elif action == 'ls':
             ret = self.list_files()
-        elif request.postpath[0] == 'get' and url:
-            if url not in self._files_list:
-                ret = {'error': '{} not found'.format(url)}
-            else:
-                self.type, self.encoding = self.getTypeAndEncoding(url)
-
-                request.setHeader('accept-ranges', 'bytes')
-                request.setHeader('Content-Disposition', 'inline; filename="{}"'.format(os.path.basename(url)))
-
-                self.fileForReading = self._files_list[url]
-                offset, size = self.makeProducer(request)
-
-                if request.method == 'HEAD':
-                    return ''
-
-                producer = TorrentProducer(self, request, self.fileForReading, offset, size)
-                producer.start()
-                return server.NOT_DONE_YET
-        elif request.postpath[0] == 'rm' and url:
+        elif action == 'rm' and url:
             ret = self.remove_torrent(url)
-        elif request.postpath[0] == 'pause' and url:
+        elif action == 'pause' and url:
             ret = self.pause_torrent(url)
-        elif request.postpath[0] == 'flush':
+        elif action == 'flush':
             ret = self.flush_torrent()
         else:
-            ret = help()
-        return json.dumps(ret)+'\n'
+            if action not in self._files_list:
+                ret = help()
+            else:
+                fileForReading = self._files_list[action]
+                mimetype, encoding = mimetypes.guess_type(action, strict=False)
+                filesize = fileForReading.info.size
+                try:
+                    ranges = request.http_range
+                    offset = ranges.start or 0
+                    stop = ranges.stop or filesize - 1
+                    #rangestr = 'bytes {}-{}/{}'.format(offset, stop, filesize)
+                    size = stop - offset + 1
+                except:
+                    #rangestr = 'bytes */{}'.format(filesize)
+                    offset = 0
+                    size = filesize
 
-    render_HEAD = render_GET
+                resume = asyncio.Event()
 
+                class StreamResponse(web.StreamResponse):
+                    def write(self, data):
+                        super().write(data)
+                        self.resume()
+
+                    def resume(self):
+                        if not resume.is_set():
+                            resume.set()
+
+                resp = StreamResponse(status=200,
+                              reason='OK',
+                              headers={
+                                'accept-ranges': 'bytes',
+                                'Content-Type': mimetype,
+                                'content-length': str(filesize),
+                                #'content-range': rangestr,
+                                'Content-Disposition': 'inline; filename="{}"'.format(os.path.basename(action))
+                                })
+
+
+                if request.method == 'HEAD':
+                    return resp
+
+                await resp.prepare(request)
+                producer = TorrentProducer(self, resp, fileForReading, offset, size)
+                try:
+                    await producer.start()
+                    while True:
+                        resume.clear()
+                        await producer.resumeProducing()
+                        await resume.wait()
+                except asyncio.CancelledError:
+                    raise
+                finally:
+                    await producer.stopProducing()
+
+                return resp
+
+        return web.json_response(ret)
 
 def main():
-    root = Resource()
-    torrentstream = TorrentStream()
-    root.putChild("bt", torrentstream)
-    site = server.Site(root)
-    reactor.listenTCP(8882, site)
+    import concurrent
+    loop = asyncio.get_event_loop()
+    executor = concurrent.futures.ThreadPoolExecutor(5)
+    loop.set_default_executor(executor)
+
+    httpport=9999
+    app = web.Application(loop=loop)
+
+    torrentstream = TorrentStream(save_path='/opt/tmp/aiohttp', loop=loop)
+    #app.router.add_get("/bt/{action:.*}", torrentstream.render_GET)
+    app.add_subapp('/bt/', torrentstream.http)
+
+    handler = app.make_handler()
+    server = loop.create_server(handler, '0.0.0.0', 9999)
+    loop.run_until_complete(server)
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("Shutting Down!")
+        #torrentstream.shutdown()
+        loop.run_until_complete(handler.shutdown(60.0))
+        loop.close()
+        executor.shutdown()
 
 if __name__ == '__main__':
-    reactor.callWhenRunning(main)
-    reactor.run()
+    main()

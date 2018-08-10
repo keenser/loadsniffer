@@ -1,4 +1,4 @@
-var mrcurl = "ws://nuc.grsk.eu.org:8881"
+var mrcurl = "ws://nuc.grsk.eu.org:8883/ws"
 function MRCServer(url, handler) {
     let mrc = {};
     let doclose = false;

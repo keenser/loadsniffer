@@ -4,7 +4,7 @@
     "description": "chrome.webRequest sniffer",
     "background": {
 	"scripts": [
-            "mrc.js",
+            "static/mrc.js",
             "background.js"
         ]
     },
