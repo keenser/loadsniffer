@@ -3,8 +3,6 @@
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 #
 
-#import subprocess
-#from functools import partial
 import mimetypes
 import libtorrent
 import json
@@ -559,15 +557,13 @@ class TorrentStream():
 def main():
     loop = asyncio.get_event_loop()
 
-    httpport=9999
     app = web.Application(loop=loop)
 
     torrentstream = TorrentStream(save_path='/opt/tmp/aiohttp', loop=loop)
-    #app.router.add_get("/bt/{action:.*}", torrentstream.render_GET)
     app.add_subapp('/bt/', torrentstream.http)
 
     handler = app.make_handler()
-    server = loop.create_server(handler, '0.0.0.0', 9999)
+    server = loop.create_server(handler, None, 9999)
     loop.run_until_complete(server)
     try:
         loop.run_forever()
