@@ -150,18 +150,18 @@ import youtube_dl
 youtube_dl.extractor._ALL_CLASSES.pop()
 
 class Info(object):
-    @staticmethod
-    def livestreamer(url):
-        import livestreamer
-        try:
-            ls = livestreamer.Livestreamer()
-            plugin = ls.resolve_url(url)
-            stream = plugin.streams()
-            return stream
-        except livestreamer.exceptions.NoPluginError as e:
-            return "livestreamer.exceptions.NoPluginError {}".format(e)
-        except AttributeError as e:
-            return "exceptions.AttributeError {}".format(e)
+    #@staticmethod
+    #def livestreamer(url):
+    #    import livestreamer
+    #    try:
+    #        ls = livestreamer.Livestreamer()
+    #        plugin = ls.resolve_url(url)
+    #        stream = plugin.streams()
+    #        return stream
+    #    except livestreamer.exceptions.NoPluginError as e:
+    #        return "livestreamer.exceptions.NoPluginError {}".format(e)
+    #    except AttributeError as e:
+    #        return "exceptions.AttributeError {}".format(e)
 
     @staticmethod
     def youtube_dl(url):
