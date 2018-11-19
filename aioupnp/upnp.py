@@ -35,9 +35,9 @@ class UPNPDevice(object):
         for service in self.description.get('serviceList', {}).get('service', []):
             serviceType = self.getName(service.get('serviceType'))
             if serviceType == 'AVTransport':
-                dlnaservice = dlna.AVTransport(self.location, service, self)
+                dlnaservice = dlna.AVTransport(self, service)
             else:
-                dlnaservice = dlna.DLNAService(self.location, service, self)
+                dlnaservice = dlna.DLNAService(self, service)
             self.services[serviceType] = dlnaservice
 
         if 'deviceList' in self.description:
@@ -45,6 +45,14 @@ class UPNPDevice(object):
                 dev = UPNPDevice(description=child, parent=self)
                 self.childs.append(dev)
         notify.send('UPnP.Device.detection_completed', device=self)
+
+    async def shutdown(self):
+        for service in self.services.values():
+            await service.shutdown()
+
+    async def update_callback(self):
+        for service in self.services.values():
+            await service.resubscribe()
 
     @staticmethod
     def getName(typename):
@@ -84,6 +92,10 @@ class UPNPDevice(object):
     def events(self):
         return self.parent.events
 
+    @property
+    def localhost(self):
+        return self.description.get('localhost')
+
 
 class UPNPRootDevice(UPNPDevice):
     def __init__(self, description, ssdp, events):
@@ -112,7 +124,7 @@ class UPNPServer:
 
         notify.connect('UPnP.SSDP.new_device', self.create_device)
         notify.connect('UPnP.SSDP.removed_device', self.remove_device)
-        #notify.connect('UPnP.Device.detection_completed', self.detection_complited)
+        notify.connect('UPnP.SSDP.update_device', self.update_device)
 
         self.events = events.EventsServer(loop=self.loop, http=self.http)
         self.ssdp = self.loop.run_until_complete(ssdp.SSDPServer(loop=self.loop))
@@ -137,10 +149,8 @@ class UPNPServer:
 
     async def parse_description(self, url):
         try:
-            async with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop), read_timeout=5) as session:
+            async with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop), read_timeout=5, raise_for_status=True) as session:
                 async with session.get(url) as resp:
-                    if resp.status != 200:
-                        raise aiohttp.errors.ClientResponseError('Error %d' % resp.status)
                     text = await resp.text()
                     xml = xmltodict.parse(text, dict_constructor=dict, force_list=('device', 'service'))
                     device = xml['root']['device'][0]
@@ -154,23 +164,17 @@ class UPNPServer:
         self.log.warn('create %s', device)
         description = await self.parse_description(device.get('location'))
         if description:
-            self.devices[device.get('location')] = UPNPRootDevice(description, device, self.events)
+            self.devices[device.get('usn')] = UPNPRootDevice(description, device, self.events)
 
     async def remove_device(self, device=None):
         self.log.warn('remove %s', device)
-        if device.get('location') in self.devices:
-            notify.send('UPnP.RootDevice.removed', device=self.devices.pop(device.get('location')))
+        if device.get('usn') in self.devices:
+            upnpdevice = self.devices.pop(device.get('usn'))
+            notify.send('UPnP.RootDevice.removed', device=upnpdevice)
+            await upnpdevice.shutdown()
 
-#    async def detection_complited(self, device=None):
-#        #print('detection_complited', device.deviceType, device.location)
-#        #print('service', device.services)
-#        service = device.service('AVTransport')
-#        def state_change(data):
-#            print('state_change', data)
-#
-#        if service:
-#            await service.subscribe('CurrentTrackMetaData', state_change)
-#            await service.subscribe('TransportState', state_change)
-#        #    print(await service.stop())
-#        #    print(await service.transporturi('http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4', 'BBB', 'mp4/video'))
-#        #    print(await service.play())
+    async def update_device(self, device=None):
+        self.log.warn('update %s', device)
+        if device.get('usn') in self.devices:
+            upnpdevice = self.devices.get(device.get('usn'))
+            await upnpdevice.update_callback()

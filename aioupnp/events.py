@@ -35,50 +35,85 @@ class EventsServer:
         self.loop = asyncio.get_event_loop() if loop is None else loop
 
         self.events = {}
-        self.sidtourl = {}
+        self.sidtoservice = {}
+        self.running_tasks = {}
         eventsapp = aiohttp.web.Application()
         eventsapp.router.add_route('*', '/', self.events_handler)
         http.add_subapp('/events/', eventsapp)
 
     async def events_handler(self, request):
+        self.log.debug('events_handler request %s', request)
         if request.has_body:
             body = await request.text()
-            url = self.sidtourl.get(request.headers.get('SID'))
-            self.log.warn('event %s %s', request.headers.get('SID'), url)
-            #if url is None:
-            print(body)
-            events = self.events.setdefault(url, {})
+            service = self.sidtoservice.get(request.headers.get('SID'))
+            self.log.warn('event %s %s', request.headers.get('SID'), service)
+            events = self.events.setdefault(service.uid, {})
 
             d = xmltodict.parse(body, dict_constructor=dict)
             lastchange = d.get('e:propertyset', {}).get('e:property', {}).get('LastChange')
-            lastevents = xmltodict.parse(lastchange, dict_constructor=dict)
-            eventsdict = lastevents.get('Event', {}).get('InstanceID', {})
-            for var, data in eventsdict.items():
-                if isinstance(data, str):
-                    continue
-                event = events.setdefault(var, Event(var))
-                event.update(data.get('@val'))
-            self.log.debug('events %s',self.events)
-            notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
+            if lastchange:
+                lastevents = xmltodict.parse(lastchange, dict_constructor=dict)
+                eventsdict = lastevents.get('Event', {}).get('InstanceID', {})
+                for var, data in eventsdict.items():
+                    if isinstance(data, str):
+                        continue
+                    event = events.setdefault(var, Event(var))
+                    event.update(data.get('@val'))
+                self.log.debug('events %s', self.events)
+                notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
         return aiohttp.web.Response()
 
-    async def subscribe(self, url, lurl, callback):
+    async def subscribe(self, service, callback):
+        self.running_tasks[service.uid] = self.loop.create_task(self.event_task(service, callback))
+
+    async def unsubscribe(self, service):
+        task = self.running_tasks.pop(service.uid)
+        if task:
+            try:
+                task.cancel()
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    #async def shutdown(self):
+    #    for task in list(self.running_tasks.keys()):
+    #        await self.unsubscribe(self.running_tasks[task])
+
+    async def event_task(self, service, callback):
         try:
-            with aiohttp.ClientSession(read_timeout = 5) as session:
-                async with session.request('SUBSCRIBE', url,
-                    headers={
-                        'TIMEOUT': 'Second-1800',
-                        'CALLBACK': '<{}>'.format(urllib.parse.urljoin(lurl,'/events/')),
-                        'NT': 'upnp:event',
-                        'Date': time.ctime()
-                    }
-                    ) as resp:
-                    if resp.status != 200:
-                        raise aiohttp.client_exceptions.ClientResponseError('Error %d' % resp.status)
-                    self.sidtourl[resp.headers.get('SID')] = url
-                    notify.connect('UPnP.DLNA.Event.{}'.format(resp.headers.get('SID')), callback)
-                    self.log.warn('subscribe %s %s', resp.headers.get('SID'), url)
-                    return resp.headers.get('SID')
-        except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
-            self.log.warn('%s: %s', err.__class__.__name__, err)
+            sid = None
+            timeout = None
+            async with aiohttp.ClientSession(read_timeout = 5, raise_for_status=True) as session:
+                try:
+                    self.log.info('event_task %s callback %s', service.url, urllib.parse.urljoin(service.device.localhost, '/events/'))
+                    async with session.request('SUBSCRIBE', service.url,
+                        headers={
+                            'TIMEOUT': 'Second-1800',
+                            'CALLBACK': '<{}>'.format(urllib.parse.urljoin(service.device.localhost, '/events/')),
+                            'NT': 'upnp:event',
+                            'Date': time.ctime()
+                        }) as resp:
+
+                        sid = resp.headers.get('SID')
+                        #TODO: parse Second-1800
+                        timeout = int(''.join(filter(str.isdigit, resp.headers.get('TIMEOUT'))))
+                        self.sidtoservice[sid] = service
+                        notify.connect('UPnP.DLNA.Event.{}'.format(sid), callback)
+                        self.log.warn('subscribe %s %s', sid, service.url)
+                    while True:
+                        await asyncio.sleep(timeout/2)
+                        async with session.request('SUBSCRIBE', service.url,
+                            headers={
+                                'SID': sid,
+                            }) as resp:
+                            self.log.warn('resubscribe %s %s', resp, service.url) 
+                finally:
+                    async with session.request('UNSUBSCRIBE', service.url,
+                        headers={
+                            'SID': sid,
+                        }) as resp:
+                            self.log.warn('unsubscribe %s %s', resp, service.url)
+
+        except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError, aiohttp.client_exceptions.ClientResponseError) as err:
+            self.log.warn('event_task %s: %s', err.__class__.__name__, err)
 
