@@ -36,7 +36,7 @@ class SSDPDevice(dict):
             ('','')
         ).encode()
 
-    def ssdpalive(self):
+    def ssdpalive(self, data={}):
         pass
 
     def doNotify(self):
@@ -54,11 +54,17 @@ class SSDPRemoteDevice(SSDPDevice):
         self.manifestation = 'remote'
         self.ssdpalive()
 
-    def ssdpalive(self):
+    def ssdpalive(self, data={}):
         if self.handle:
             self.handle.cancel()
+
+        if 'location' in data and data.get('location') != self.get('location'):
+            self.update(data)
+            if self.get('nt') == 'upnp:rootdevice':
+                notify.send('UPnP.SSDP.update_device', device=self)
+
         _, expiry = self.get('cache-control', 'max-age=60').split('=')
-        self.handle = self.server.loop.call_later(int(expiry), self.server.unRegister, self.get('usn'))
+        self.handle = self.server.loop.call_later(int(expiry) + 5, self.server.unRegister, self.get('usn'))
 
 
 class SSDPLocalDevice(SSDPDevice):
@@ -155,7 +161,7 @@ class SSDPServer:
         #(host, port) = addr
         if headers.get('usn') in self.devices:
             self.log.debug('updating last-seen for %r', headers.get('usn'))
-            self.devices.get(headers.get('usn')).ssdpalive()
+            self.devices.get(headers.get('usn')).ssdpalive(headers)
         else:
             self.log.info('Registering %s (%s)', headers.get('nt'), headers.get('location'))
             if manifestation == 'remote':
@@ -178,8 +184,8 @@ class SSDPServer:
 
     def notifyReceived(self, headers, addr):
         (host, port) = addr
-        self.log.info('Notification %s from %s:%d for %s', headers.get('nts'), host, port, headers.get('nt'))
-        self.log.debug('Notification headers: %s', headers)
+        self.log.debug('Notification %s from %s:%d for %s', headers.get('nts'), host, port, headers.get('nt'))
+        self.log.log(1, 'Notification headers: %s', headers)
 
         if headers.get('nts') == 'ssdp:alive':
             self.register(headers, addr)
@@ -190,7 +196,7 @@ class SSDPServer:
 
     def discoveryRequest(self, headers, addr):
         (host, port) = addr
-        self.log.info('Discovery request from %s:%d for %s', host, port, headers.get('st'))
+        self.log.debug('Discovery request from %s:%d for %s', host, port, headers.get('st'))
         #self.log.info('Discovery request for %s', headers.get('st'))
 
     async def resendMSearch(self):
