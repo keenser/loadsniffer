@@ -11,7 +11,7 @@ On server side(your home media server):
 
 $ sudo apt-get install python3-libtorrent python3-xmltodict
 
-$ sudo pip install youtube-dl aiohttp
+$ sudo pip3 install youtube-dl aiohttp
 
 $ ./mrc.py &
 
