@@ -30,6 +30,7 @@ class UPnPctrl(object):
         aioupnp.notify.connect('UPnP.Device.detection_completed', self.media_renderer_found)
         aioupnp.notify.connect('UPnP.RootDevice.removed', self.media_renderer_removed)
 
+        self.loop = loop or asyncio.get_event_loop()
         self.mediadevices = {}
         self.device = None
         self.registered_callbacks = {}
@@ -72,10 +73,9 @@ class UPnPctrl(object):
     async def play(self, url, title='Video', vtype='video/mp4'):
         if self.device:
             try:
-                with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop)) as session, aiohttp.Timeout(5):
+                async with aiohttp.ClientSession(read_timeout = 5) as session:
                     async with session.head(url) as response:
                         ctype = response.headers.get('content-type', vtype)
-                        print("type", ctype)
                         service = self.device.media.service('AVTransport')
                         await service.stop()
                         await service.transporturi(url, title, ctype)
@@ -100,11 +100,16 @@ class UPnPctrl(object):
             print(variable.name, 'changed from', variable.old_value, 'to', variable.value)
             if variable.value != None and len(variable.value)>0:
                 try:
-                    elt = DIDLLite.DIDLElement.fromString(variable.value)
+                    elt = aioupnp.dlna.didl.fromString(variable.value)
                     self.mediadevices[usn].status['item'] = []
-                    for item in elt.getItems():
-                        print("now playing:", item.title, item.id)
-                        self.mediadevices[usn].status['item'].append({'url':item.id, 'title':item.title})
+                    print("now playing:", elt['DIDL-Lite']['item']['dc:title'], elt['DIDL-Lite']['item']['@id'])
+                    self.mediadevices[usn].status['item'].append({
+                        'url':   elt['DIDL-Lite']['item']['@id'],
+                        'title': elt['DIDL-Lite']['item']['dc:title']
+                    })
+                    #for item in elt.getItems():
+                    #    print("now playing:", item.title, item.id)
+                    #    self.mediadevices[usn].status['item'].append({'url':item.id, 'title':item.title})
                 except SyntaxError:
                     return
         elif variable.name == 'TransportState':
@@ -117,7 +122,10 @@ class UPnPctrl(object):
             try:
                 status = self.device.status if self.device is not None else None
                 if callback['status'] != status:
-                    callback['callback'](status)
+                    #if asyncio.iscoroutinefunction(callback['callback']):
+                    self.loop.create_task(callback['callback'](status))
+                    #else:
+                    #    callback['callback'](status)
                     if status:
                         callback['status'] = status.copy()
                     else:
@@ -181,28 +189,15 @@ class Info(object):
         except youtube_dl.utils.DownloadError as e:
             return None
 
-    async def render_GET(self, request):
-        url = request.args.get('url',[None])[0]
-        if url:
-            #d = threads.deferToThread(self.livestreamer, url)
-            d = threads.deferToThread(self.youtube_dl, url)
-            d.addCallback(lambda data: (request.write(json.dumps(data, cls=JSONEncoder, indent=2)), request.finish()))
-            d.addErrback(lambda data: (request.write('plugin callback error: {}'.format(data)), request.finish()))
-            return server.NOT_DONE_YET
-        return "no 'url' parameter pecified"
-
-class Play(object):
-    def __init__(self, upnp):
-        self.upnp = upnp
-        super(Play, self).__init__()
-
-    async def render_GET(self, request):
-        url = request.args.get('url',[None])[0]
-        if url:
-            print("push to play url:", request.args.get('url'))
-            self.upnp.play(url, request.args.get('title', 'Video'))
-            return 'play'
-        return "no 'url' parameter pecified"
+#    async def render_GET(self, request):
+#        url = request.args.get('url',[None])[0]
+#        if url:
+#            #d = threads.deferToThread(self.livestreamer, url)
+#            d = threads.deferToThread(self.youtube_dl, url)
+#            d.addCallback(lambda data: (request.write(json.dumps(data, cls=JSONEncoder, indent=2)), request.finish()))
+#            d.addErrback(lambda data: (request.write('plugin callback error: {}'.format(data)), request.finish()))
+#            return server.NOT_DONE_YET
+#        return "no 'url' parameter pecified"
 
 
 class WebSocketFactory(object):
@@ -270,8 +265,8 @@ class WebSocketFactory(object):
         return response
 
     async def onOpen(self):
-        def upnpupdate(message):
-            self.factory.loop.run_until_complete(self.sendMessage(message, {'action':'upnpstatus'}))
+        async def upnpupdate(message):
+            await self.sendMessage(message, {'action':'upnpstatus'})
 
         async def btupdate(alert):
             await self.sendMessage(self.btfileslist(alert.files), {'action':'btstatus'})
@@ -308,10 +303,11 @@ class WebSocketFactory(object):
             url = data.get('url')
             if url:
                 if data.get('cookie'):
+                    #TODO
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local[0], urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
                 print("push to play url:", url)
-                self.upnp.play(url, data.get('title', 'Video'))
+                await self.upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             self.upnp.refresh()
         elif jsondata.get('action') == 'search':
@@ -357,15 +353,18 @@ class WebSocketFactory(object):
 
 async def rootindex(app, handler):
     async def index_handler(request):
-        print(request)
         if request.path == '/':
             request.match_info['filename'] = 'index.html'
         return await handler(request)
     return index_handler
 
 def main():
-    logging.basicConfig(level=logging.ERROR)
+    logging.basicConfig(level=logging.DEBUG)
     loop = asyncio.get_event_loop()
+
+    logging.getLogger('SSDPServer').setLevel(logging.INFO)
+    logging.getLogger('TorrentProducer').setLevel(logging.WARN)
+    logging.getLogger('TorrentStream').setLevel(logging.INFO)
 
     httpport = 8883
 
@@ -382,7 +381,7 @@ def main():
     http.router.add_static('/', 'static')
 
     handler = http.make_handler()
-    server = loop.create_server(handler, '0.0.0.0', httpport)
+    server = loop.create_server(handler, None, httpport)
     server = loop.run_until_complete(server)
 
     try:
