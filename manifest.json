@@ -13,6 +13,7 @@
         "contextMenus",
         "webRequest",
         "cookies",
+        "storage",
         "*://*/*"
     ],
     "browser_action": {
@@ -23,6 +24,10 @@
         "48": "chrome/icons/grey_48x48.png",
         "32": "chrome/icons/grey_32x32.png",
         "16": "chrome/icons/grey_16x16.png"
+    },
+    "options_ui": {
+        "page": "chrome/options.html",
+        "open_in_tab": false
     },
     "manifest_version": 2
 }
