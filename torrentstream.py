@@ -12,12 +12,14 @@ import asyncio
 import aiofiles
 from aiohttp import web
 from collections import namedtuple
+import logging
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
 class DynamicTorrentProducer(object):
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
-        print("DynamicTorrentProducer", offset, size)
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.log.info("starting %d %d", offset, size)
         self.stream = stream
         self.request = request
         self.fileinfo = fileinfo
@@ -28,19 +30,19 @@ class DynamicTorrentProducer(object):
         self.buffer = {}
 
     def read_piece_alert(self, alert):
-        print("read_piece_alert", alert.piece, alert.size)
+        self.log.debug("read_piece_alert %d %d", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
         self.request.resume()
 
     def piece_finished_alert(self, alert):
-        print("piece_finished_alert")
+        self.log.debug("piece_finished_alert")
         self.slide()
         self.request.resume()
 
     async def read_piece(self):
-        print("read_piece", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
+        self.log.debug("read_piece %d %d %d", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
         buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset]
-        self.request.write(buffer)
+        await self.request.write(buffer)
         await self.request.drain()
         self.offset += len(buffer)
         del self.buffer[self.piece.piece]
@@ -52,7 +54,7 @@ class DynamicTorrentProducer(object):
             raise asyncio.CancelledError
 
     async def resumeProducing(self):
-        print("index", self.piece.piece, self.buffer.keys())
+        self.log.debug("index %d %s", self.piece.piece, self.buffer.keys())
         for window in range(self.piece.piece, min(self.lastpiece.piece + 1, self.piece.piece + len(self.prioritymask))):
             if not window in self.buffer and self.fileinfo.handle.have_piece(window):
                 self.buffer[window] = None
@@ -61,7 +63,7 @@ class DynamicTorrentProducer(object):
             await self.read_piece()
 
     async def stopProducing(self):
-        print("stopProducing")
+        self.log.info("stopProducing")
         self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
 
@@ -71,7 +73,7 @@ class DynamicTorrentProducer(object):
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
         self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
         self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
-        print("start", self.piece.piece, self.lastpiece.piece, self.piecelength)
+        self.log.info("start %d %d %d", self.piece.piece, self.lastpiece.piece, self.piecelength)
 
         # priority window size 4Mb * 8
         priorityblock = int((4 * 1024 * 1024 )/ self.piecelength)
@@ -81,7 +83,7 @@ class DynamicTorrentProducer(object):
         elif priorityblock > 8:
             priorityblock = 8
         self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
-        print("prioritymask", self.prioritymask)
+        self.log.info("prioritymask %s", self.prioritymask)
 
         self.fileinfo.handle.resume()
         self.slide(self.piece.piece)
@@ -94,7 +96,7 @@ class DynamicTorrentProducer(object):
         for priority in self.prioritymask:
             while True:
                 if window > self.lastpiece.piece:
-                    print('slide', data)
+                    self.log.debug('slide %s', data)
                     return
                 if self.fileinfo.handle.have_piece(window):
                     if window == self.priority_window:
@@ -106,7 +108,7 @@ class DynamicTorrentProducer(object):
                     self.fileinfo.handle.piece_priority(window, priority)
                     window += 1
                     break
-        print('slide', data)
+        self.log.debug('slide %s', data)
 
 
 # speedup reading pieces using direct access to file on filesystem
@@ -118,7 +120,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
             if data:
                 self.offset += len(data)
-                self.request.write(data)
+                await self.request.write(data)
                 await self.request.drain()
             del data
 
@@ -134,13 +136,17 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             self.fileObject = await aiofiles.open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), mode='rb')
             await self.fileObject.seek(self.offset)
 
-        data = await self.fileObject.read(self.piecelength - self.piece.start)
+        if self.piece.piece < self.lastpiece.piece:
+            readlen = self.piecelength - self.piece.start
+        else:
+            readlen = self.lastpiece.start - self.piece.start + 1
+        #print("self.piecelength {}\nself.piece.start {}\nself.lastoffset {}\nself.offset {}\nself.lastpiece.start {}", self.piecelength, self.piece.start, self.lastoffset, self.offset, self.lastpiece.start)
+        data = await self.fileObject.read(readlen)
  
         if data:
             self.offset += len(data)
-            self.request.write(data)
+            await self.request.write(data)
             await self.request.drain()
-        del data
 
         if self.offset < self.lastoffset:
             # move to next piece
@@ -154,7 +160,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
         await super(StaticTorrentProducer, self).stopProducing()
 
     async def resumeProducing(self):
-        print("index", self.piece.piece)
+        self.log.debug("index %d", self.piece.piece)
         if self.fileinfo.handle.have_piece(self.piece.piece):
             await self.read_piece()
 
@@ -180,6 +186,7 @@ class TorrentStream():
     NORMAL = 4
     HIGHEST = 7
     def __init__(self, **options):
+        self.log = logging.getLogger(self.__class__.__name__)
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
@@ -190,7 +197,7 @@ class TorrentStream():
         self.http = web.Application()
         self.http.router.add_get('/{action:.*}', self.render_GET)
 
-        print("libtorrent", libtorrent.version)
+        self.log.info("libtorrent %s", libtorrent.version)
         self.session = session = libtorrent.session()
         self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
 
@@ -230,14 +237,14 @@ class TorrentStream():
                     with open(file, 'rb') as fd:
                         self.add_torrent(resume_data = fd.read())
             except (IOError, EOFError, RuntimeError) as e:
-                print("Unable to load fastresume", e)
+                self.log.error("Unable to load fastresume %s", e)
 
         def torrent_checked_alert(alert):
             #alert.handle.resume()
             alert.handle.prioritize_pieces(alert.handle.get_torrent_info().num_pieces() * [TorrentStream.PAUSE])
 
         def metadata_received_alert(alert):
-            print('got {} files'.format(alert.handle.get_torrent_info().num_files()))
+            self.log.info('got %d files', alert.handle.get_torrent_info().num_files())
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
@@ -267,12 +274,12 @@ class TorrentStream():
             self.save_resume_data(alert.handle)
 
         def save_resume_data_alert(alert):
-            print("save_resume_data_alert", alert.handle.get_torrent_info().name())
+            self.log.info("save_resume_data_alert %s", alert.handle.get_torrent_info().name())
             try:
                 with open(alert.handle.save_path() + "/" + alert.handle.get_torrent_info().name() + ".fastresume", 'wb') as fd:
                     fd.write(libtorrent.bencode(alert.resume_data))
             except (IOError, EOFError) as e:
-                print("Unable to save fastresume", e)
+                self.log.error("Unable to save fastresume %s", e)
 
         self.add_alert_handler('torrent_added_alert', torrent_added_alert)
         self.add_alert_handler('metadata_received_alert', metadata_received_alert)
@@ -285,7 +292,7 @@ class TorrentStream():
         self.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
 
     def _alert_queue_loop(self):
-        print("_alert_queue_loop")
+        self.log.debug("enter to _alert_queue_loop")
         try:
             while not self.queue_event.is_set():
                 if self.session.wait_for_alert(1000):
@@ -298,9 +305,9 @@ class TorrentStream():
         for alert in alerts:
             if alert.what() != 'block_finished_alert' and alert.what() != 'block_downloading_alert':
                 try:
-                    print('{0}: {1}'.format(alert.what(), alert.message()))
+                    self.log.debug('%s: %s', alert.what(), alert.message())
                 except:
-                    print(alert.what())
+                    self.log.debug('%s', alert.what())
             if alert.what() in self._alert_handlers:
                 for handler in self._alert_handlers[alert.what()]:
                     if asyncio.iscoroutinefunction(handler):
@@ -336,7 +343,7 @@ class TorrentStream():
             if not self._alert_handlers[alert]:
                 self._alert_handlers.pop(alert)
         else:
-            print("warning remove alert handler", alert, handler)
+            self.log.warn("remove alert %s handler %s not in handlers", alert, handler)
 
     def add_torrent(self, url = None, resume_data = None):
         add_torrent_params = {}
@@ -462,7 +469,7 @@ class TorrentStream():
     def shutdown(self):
         self.queue_event.set()
         self.loop.run_until_complete(asyncio.wait([self.queue_loop]))
-        print("shutdown done")
+        self.log.info("shutdown done")
 
     async def render_GET(self, request):
         url = request.query.get('url', None)
@@ -504,32 +511,32 @@ class TorrentStream():
                 try:
                     ranges = request.http_range
                     offset = ranges.start or 0
-                    stop = ranges.stop or filesize - 1
-                    #rangestr = 'bytes {}-{}/{}'.format(offset, stop, filesize)
-                    size = stop - offset + 1
+                    stop = ranges.stop or filesize
+                    rangestr = 'bytes {}-{}/{}'.format(offset, stop - 1, filesize)
+                    size = stop - offset
                 except:
-                    #rangestr = 'bytes */{}'.format(filesize)
+                    rangestr = 'bytes */{}'.format(filesize)
                     offset = 0
                     size = filesize
 
                 resume = asyncio.Event()
 
                 class StreamResponse(web.StreamResponse):
-                    def write(self, data):
-                        super().write(data)
+                    async def write(self, data):
                         self.resume()
+                        await super().write(data)
 
                     def resume(self):
                         if not resume.is_set():
                             resume.set()
 
-                resp = StreamResponse(status=200,
-                              reason='OK',
+                resp = StreamResponse(status=206,
+                              reason='Partial Content',
                               headers={
                                 'accept-ranges': 'bytes',
                                 'Content-Type': mimetype,
-                                'content-length': str(filesize),
-                                #'content-range': rangestr,
+                                'content-length': str(size),
+                                'content-range': rangestr,
                                 'Content-Disposition': 'inline; filename="{}"'.format(os.path.basename(action))
                                 })
 
