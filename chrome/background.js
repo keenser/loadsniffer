@@ -283,10 +283,10 @@ var onStartupOrOnInstalledListener = function() {
         });
         chrome.browserAction.setIcon({
             path: {
-                "128": "icons/blue_128x128.png",
-                "48": "icons/blue_48x48.png",
-                "32": "icons/blue_32x32.png",
-                "16": "icons/blue_16x16.png"
+                "128": "chrome/icons/blue_128x128.png",
+                "48": "chrome/icons/blue_48x48.png",
+                "32": "chrome/icons/blue_32x32.png",
+                "16": "chrome/icons/blue_16x16.png"
             }
         });
     }, function() {
@@ -294,10 +294,10 @@ var onStartupOrOnInstalledListener = function() {
         UpdateUPNPStatus(null );
         chrome.browserAction.setIcon({
             path: {
-                "128": "icons/grey_128x128.png",
-                "48": "icons/grey_48x48.png",
-                "32": "icons/grey_32x32.png",
-                "16": "icons/grey_16x16.png"
+                "128": "chrome/icons/grey_128x128.png",
+                "48": "chrome/icons/grey_48x48.png",
+                "32": "chrome/icons/grey_32x32.png",
+                "16": "chrome/icons/grey_16x16.png"
             }
         });
     });

@@ -5,7 +5,7 @@
     "background": {
 	"scripts": [
             "static/mrc.js",
-            "background.js"
+            "chrome/background.js"
         ]
     },
     "permissions": [
@@ -16,13 +16,13 @@
         "*://*/*"
     ],
     "browser_action": {
-        "default_popup": "popup.html"
+        "default_popup": "chrome/popup.html"
     },
     "icons": {
-        "128": "icons/grey_128x128.png",
-        "48": "icons/grey_48x48.png",
-        "32": "icons/grey_32x32.png",
-        "16": "icons/grey_16x16.png"
+        "128": "chrome/icons/grey_128x128.png",
+        "48": "chrome/icons/grey_48x48.png",
+        "32": "chrome/icons/grey_32x32.png",
+        "16": "chrome/icons/grey_16x16.png"
     },
     "manifest_version": 2
 }
