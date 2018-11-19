@@ -5,10 +5,12 @@
 
 import logging
 import xmltodict
-import xml.etree.ElementTree as xml
+import xml.etree.cElementTree as xml
 import urllib.parse
 import aiohttp
 import asyncio
+
+n = lambda n, e: "{{{}}}{}".format(DIDLLite.namespaces[n], e)
 
 class DIDLLite(dict):
     namespaces = {
@@ -22,46 +24,35 @@ class DIDLLite(dict):
         'pv': 'http://www.pv.com/pvns/',
     }
 
+    def __init__(self):
+        for i, j in self.namespaces.items():
+            xml.register_namespace(i, j)
+
     def DIDLElement(self, item):
-        element = {'DIDL-Lite': {
-            '@xmlns:dc': 'http://purl.org/dc/elements/1.1/',
-            '@xmlns:upnp': 'urn:schemas-upnp-org:metadata-1-0/upnp/',
-            '@xmlns': 'urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/'
-        }}
-        element['DIDL-Lite'].update(item)
+        element = xml.Element('DIDL-Lite', xmlns='urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/')
+        element.append(item)
         return element
 
-    def VideoItem(self, itemid, patentid, restricted, title, resource):
-        item = {
-            'item': {
-                '@id': itemid,
-                '@parentID': patentid,
-                '@restricted': restricted,
-                'dc:title': {
-                    '@xmlns:dc': 'http://purl.org/dc/elements/1.1/'
-                },
-                'upnp:class': {
-                    '@xmlns:upnp': 'urn:schemas-upnp-org:metadata-1-0/upnp/',
-                    '#text': 'object.item.videoItem'
-                },
-                'dc:date': {
-                    '@xmlns:dc': 'http://purl.org/dc/elements/1.1/',
-                    '#text': '2003-07-23T01:18:00+02:00'
-                }
-            }
-        }
-        item['item'].update(resource)
+    def VideoItem(self, itemid, parentid, restricted, title, resource):
+        item = xml.Element('item', {'id': str(itemid) , 'parentID': str(parentid), 'restricted': str(restricted)})
+        _title = xml.Element(n('dc', 'title'))
+        _title.text = title
+        _class = xml.Element(n('upnp', 'class'))
+        _class.text = 'object.item.videoItem'
+        _date = xml.Element(n('dc', 'date'))
+        _date.text = '2003-07-23T01:18:00+02:00'
+        item.extend((_title, _class, _date, resource))
         return item
 
     def Resource(self, protocolInfo, text):
-        return {
-            'res': {
-                '@protocolInfo': protocolInfo,
-                '#text': text
-            }
-        }
+        _resource = xml.Element('res', protocolInfo=protocolInfo)
+        _resource.text = text
+        return _resource
     def toString(self, data):
-        return xmltodict.unparse(data)
+        return xml.tostring(data, encoding='utf8').decode()
+
+    def fromString(self, data):
+        return xmltodict.parse(data, dict_constructor=dict)
 
 didl = DIDLLite()
 
@@ -83,7 +74,7 @@ class DLNAAction:
                         }
                     }
                 }
-        with aiohttp.ClientSession(read_timeout = 5) as session:
+        async with aiohttp.ClientSession(read_timeout = 5, raise_for_status=True) as session:
             async with session.post(url, data=xmltodict.unparse(payload), 
                 headers={
                     'SOAPACTION':'"{}#{}"'.format(servicetype, self.action),
@@ -94,9 +85,8 @@ class DLNAAction:
 
 
 class DLNAService(dict):
-    def __init__(self, location, service, device):
+    def __init__(self, device, service):
         super().__init__(service)
-        self.location = location
         self.device = device
         #self.lastevents = {}
         self.events_subscription = False
@@ -104,6 +94,11 @@ class DLNAService(dict):
 
     def action(self, action):
         return DLNAAction(self, action)
+
+    async def shutdown(self):
+        if self.events_subscription:
+            #url = urllib.parse.urljoin(self.location, self.get('eventSubURL'))
+            await self.device.events.unsubscribe(self)
 
     async def eventscallback(self, data):
         #d = xmltodict.parse(data, dict_constructor=dict)
@@ -119,14 +114,32 @@ class DLNAService(dict):
         self.callbacks[variable] = callback
         if self.events_subscription == False:
             self.events_subscription = True
-            url = urllib.parse.urljoin(self.location, self.get('eventSubURL'))
-            await self.device.events.subscribe(url, self.device.description.get('localhost'), self.eventscallback)
+            #url = urllib.parse.urljoin(self.location, self.get('eventSubURL'))
+            await self.device.events.subscribe(self, self.eventscallback)
+
+    async def resubscribe(self):
+        if self.events_subscription:
+            await self.device.events.unsubscribe(self)
+            await self.device.events.subscribe(self, self.eventscallback)
+
+    @property
+    def location(self):
+        return self.device.location
+
+    @property
+    def serviceType(self):
+        return self.get('serviceType')
+
+    @property
+    def url(self):
+        return urllib.parse.urljoin(self.location, self.get('eventSubURL'))
+
+    @property
+    def uid(self):
+        return '{}:{}'.format(self.device.usn, self.serviceType)
 
 
 class AVTransport(DLNAService):
-    def __init__(self, location, service, device):
-        super().__init__(location, service, device)
-
     async def stop(self):
         return await self.action('Stop').call(InstanceID=0)
 
