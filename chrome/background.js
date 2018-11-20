@@ -329,9 +329,10 @@ chrome.contextMenus.create({
 chrome.browserAction.setBadgeBackgroundColor({
     color: '#2196F3'
 });
-chrome.runtime.onStartup.addListener(function() {
-    onStartupOrOnInstalledListener();
-});
-chrome.runtime.onInstalled.addListener(function() {
-    onStartupOrOnInstalledListener();
-});
+//chrome.runtime.onStartup.addListener(function() {
+//    onStartupOrOnInstalledListener();
+//});
+//chrome.runtime.onInstalled.addListener(function() {
+//    onStartupOrOnInstalledListener();
+//});
+onStartupOrOnInstalledListener();

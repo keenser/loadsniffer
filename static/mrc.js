@@ -53,11 +53,16 @@ function MRCServer(url, handler) {
                 handler(jsondata);
             }
         }
+        websocket.onerror = function(evt) {
+            if(websocket.readyState == 1) {
+                console.log('ws normal error: ' + evt.type);
+            }
+        }
         });
     }
     mrc.sendMessage = function(data, callback) {
         console.debug('websocket >', data);
-        if (websocket && websocket.readyState) {
+        if (websocket && websocket.readyState == 1) {
             let senddata = data;
             if (callback !== undefined) {
                 let currentid = uid++;
