@@ -335,4 +335,4 @@ chrome.browserAction.setBadgeBackgroundColor({
 //chrome.runtime.onInstalled.addListener(function() {
 //    onStartupOrOnInstalledListener();
 //});
-onStartupOrOnInstalledListener();
+document.onload = onStartupOrOnInstalledListener();
