@@ -11,7 +11,7 @@ On server side(your home media server):
 
 $ sudo apt-get install python3-libtorrent python3-xmltodict
 
-$ sudo pip install youtube-dl aiohttp
+$ sudo pip3 install youtube-dl aiohttp
 
 $ ./mrc.py &
 
@@ -19,7 +19,7 @@ On client side(your notebook):
 
 goto http://yourserverip:8883/ (manage torrents only)
 
-or add current project directory as chrome extencion for grab media resources from web pages 
+or add current project directory as chrome extencion for grab media resources from web pages. Don't forget to set mrc server Websocket URL in chrome extension settings
 
 # torrentstream.py
 Uses libtorrent and aiohttp to stream files inside torrents over http. Can be used as standalone server.
