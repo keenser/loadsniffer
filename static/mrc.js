@@ -1,4 +1,3 @@
-//var mrcurl = "ws://nuc.grsk.eu.org:8883/ws";
 function urlcfg(callback) {
     let urllocation = window.location.href;
     if ( urllocation.startsWith("chrome-extension") ) {
@@ -37,11 +36,6 @@ function MRCServer(url, handler) {
             if (closecallback) {
                 closecallback();
             }
-            if (!doclose) {
-                setTimeout(function() {
-                    mrc.connect(opencallback, closecallback);
-                }, 2000);
-            }
         }
         websocket.onmessage = function(data) {
             console.debug('websocket <', data);
@@ -54,7 +48,12 @@ function MRCServer(url, handler) {
             }
         }
         websocket.onerror = function(evt) {
-            console.log('ws onerror: ', evt.type);
+            console.log('ws onerror: ', evt);
+            if (!doclose) {
+                setTimeout(function() {
+                    mrc.connect(opencallback, closecallback);
+                }, 2000);
+            }
         }
         });
     }
