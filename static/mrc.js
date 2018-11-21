@@ -36,6 +36,11 @@ function MRCServer(url, handler) {
             if (closecallback) {
                 closecallback();
             }
+            if (!doclose) {
+                setTimeout(function() {
+                    mrc.connect(opencallback, closecallback);
+                }, 2000);
+            }
         }
         websocket.onmessage = function(data) {
             console.debug('websocket <', data);
@@ -45,14 +50,6 @@ function MRCServer(url, handler) {
                 delete callback_pool[jsondata['_uid']];
             } else if (handler) {
                 handler(jsondata);
-            }
-        }
-        websocket.onerror = function(evt) {
-            console.log('ws onerror: ', evt);
-            if (!doclose) {
-                setTimeout(function() {
-                    mrc.connect(opencallback, closecallback);
-                }, 2000);
             }
         }
         });
