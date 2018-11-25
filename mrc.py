@@ -40,7 +40,7 @@ class UPnPctrl(object):
         self.aioupnp.shutdown()
 
     async def media_renderer_removed(self, device = None):
-        self.log.into('media_renderer_removed %s', device)
+        self.log.info('media_renderer_removed %s', device)
         self.mediadevices.pop(device.usn, None)
         if self.device:
             if self.device.media.usn == device.usn:

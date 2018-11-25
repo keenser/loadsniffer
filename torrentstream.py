@@ -478,7 +478,7 @@ class TorrentStream():
 
         def help():
             def rstrip(pattern, string):
-                return string[:-len(pattern)] if string.endswith(pattern) else string
+                return string[:-len(pattern)] if string.endswith(pattern) and len(pattern) else string
 
             prepath = '{}{}'.format(request.host, rstrip(action, request.path))
             return {'example': ['{p}add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
