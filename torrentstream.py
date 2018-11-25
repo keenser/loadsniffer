@@ -13,6 +13,7 @@ import aiofiles
 from aiohttp import web
 from collections import namedtuple
 import logging
+import binascii
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
@@ -259,7 +260,7 @@ class TorrentStream():
 
         def torrent_removed_alert(alert):
             info_hash = str(alert.handle.info_hash())
-            for path, handle in self._files_list.items():
+            for path, handle in dict(self._files_list).items():
                 if str(handle.handle.info_hash()) == info_hash:
                     del self._files_list[path]
                     self._handle_alert([Files_List_Update_Alert(self.list_files())])
@@ -364,7 +365,7 @@ class TorrentStream():
 
     def remove_torrent(self, info_hash):
         try:
-            handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
+            handle = self.session.find_torrent(libtorrent.sha1_hash(binascii.unhexlify(info_hash)))
             if handle.is_valid():
                 ti = handle.get_torrent_info()
                 if ti:
@@ -379,7 +380,7 @@ class TorrentStream():
 
     def pause_torrent(self, info_hash):
         try:
-            handle = self.session.find_torrent(libtorrent.sha1_hash(info_hash.decode('hex')))
+            handle = self.session.find_torrent(libtorrent.sha1_hash(binascii.unhexlify(info_hash)))
             if handle.is_valid():
                 if handle.status().paused:
                     handle.resume()
