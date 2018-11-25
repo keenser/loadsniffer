@@ -26,6 +26,7 @@ class MediaDevice(object):
 
 class UPnPctrl(object):
     def __init__(self, loop=None, http=None, httpport=0):
+        self.log = logging.getLogger(self.__class__.__name__)
         self.aioupnp = aioupnp.upnp.UPNPServer(loop=loop, http=http, httpport=httpport)
         aioupnp.notify.connect('UPnP.Device.detection_completed', self.media_renderer_found)
         aioupnp.notify.connect('UPnP.RootDevice.removed', self.media_renderer_removed)
@@ -39,7 +40,7 @@ class UPnPctrl(object):
         self.aioupnp.shutdown()
 
     async def media_renderer_removed(self, device = None):
-        print("media_renderer_removed", device)
+        self.log.into('media_renderer_removed %s', device)
         self.mediadevices.pop(device.usn, None)
         if self.device:
             if self.device.media.usn == device.usn:
@@ -53,12 +54,12 @@ class UPnPctrl(object):
         if device is None:
             return
 
-        print("found upnp device", device.usn, device.friendlyName)
+        self.log.info('found upnp device %s %s', device.usn, device.friendlyName)
 
         if device.deviceType.find('MediaRenderer') < 0:
             return
 
-        print("media renderer", device.friendlyName)
+        self.log.info('media renderer %s', device.friendlyName)
 
         mediadevice = MediaDevice(device)
         self.mediadevices[device.usn] = mediadevice
@@ -77,14 +78,14 @@ class UPnPctrl(object):
                     async with session.head(url) as response:
                         ctype = response.headers.get('content-type', vtype)
                         service = self.device.media.service('AVTransport')
-                        await service.stop()
+                        try:
+                            await service.stop()
+                        except aiohttp.client_exceptions.ClientError:
+                            pass
                         await service.transporturi(url, title, ctype)
                         await service.play()
-                        #if response.status != 200:
-                        #    raise aiohttp.errors.ClientResponseError('Error %d' % resp.status)
-                        #text = await response.text()
             except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
-                #self.log.warn('%s: %s', err.__class__.__name__, err)
+                self.log.warn('play %s', err)
                 return
 
     def add_alert_handler(self, callback):
@@ -97,12 +98,12 @@ class UPnPctrl(object):
     def state_variable_change(self, variable):
         usn = variable.service.device.usn
         if variable.name == 'CurrentTrackMetaData':
-            print(variable.name, 'changed from', variable.old_value, 'to', variable.value)
+            self.log.info('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
             if variable.value != None and len(variable.value)>0:
                 try:
                     elt = aioupnp.dlna.didl.fromString(variable.value)
                     self.mediadevices[usn].status['item'] = []
-                    print("now playing:", elt['DIDL-Lite']['item']['dc:title'], elt['DIDL-Lite']['item']['@id'])
+                    self.log.info('now playing: %s %s', elt['DIDL-Lite']['item']['dc:title'], elt['DIDL-Lite']['item']['@id'])
                     self.mediadevices[usn].status['item'].append({
                         'url':   elt['DIDL-Lite']['item']['@id'],
                         'title': elt['DIDL-Lite']['item']['dc:title']
@@ -113,7 +114,7 @@ class UPnPctrl(object):
                 except SyntaxError:
                     return
         elif variable.name == 'TransportState':
-            print(variable.name, 'changed from', variable.old_value, 'to', variable.value)
+            self.log.info('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
             self.mediadevices[usn].status['state'] = variable.value
         self.trigger_callbacks()
 
@@ -122,16 +123,13 @@ class UPnPctrl(object):
             try:
                 status = self.device.status if self.device is not None else None
                 if callback['status'] != status:
-                    #if asyncio.iscoroutinefunction(callback['callback']):
                     self.loop.create_task(callback['callback'](status))
-                    #else:
-                    #    callback['callback'](status)
                     if status:
                         callback['status'] = status.copy()
                     else:
                         callback['status'] = status
             except Exception as e:
-                print("trigger_callbacks exception", e)
+                self.log.error('trigger_callbacks exception %s', e)
 
     def refresh(self):
         self.coherence.msearch.double_discover()
@@ -150,23 +148,10 @@ import youtube_dl
 youtube_dl.extractor._ALL_CLASSES.pop()
 
 class Info(object):
-    #@staticmethod
-    #def livestreamer(url):
-    #    import livestreamer
-    #    try:
-    #        ls = livestreamer.Livestreamer()
-    #        plugin = ls.resolve_url(url)
-    #        stream = plugin.streams()
-    #        return stream
-    #    except livestreamer.exceptions.NoPluginError as e:
-    #        return "livestreamer.exceptions.NoPluginError {}".format(e)
-    #    except AttributeError as e:
-    #        return "exceptions.AttributeError {}".format(e)
-
     @staticmethod
     def youtube_dl(url):
         try:
-            print('youtube_dl', url)
+            #print('youtube_dl', url)
             ydl = youtube_dl.YoutubeDL(
                 params={
                     'quiet': True,
@@ -189,19 +174,9 @@ class Info(object):
         except youtube_dl.utils.DownloadError as e:
             return None
 
-#    async def render_GET(self, request):
-#        url = request.args.get('url',[None])[0]
-#        if url:
-#            #d = threads.deferToThread(self.livestreamer, url)
-#            d = threads.deferToThread(self.youtube_dl, url)
-#            d.addCallback(lambda data: (request.write(json.dumps(data, cls=JSONEncoder, indent=2)), request.finish()))
-#            d.addErrback(lambda data: (request.write('plugin callback error: {}'.format(data)), request.finish()))
-#            return server.NOT_DONE_YET
-#        return "no 'url' parameter pecified"
-
-
 class WebSocketFactory(object):
     def __init__(self, loop = None, factory = None, upnp = None, torrent = None, peer = None, local = None, ws = None):
+        self.log = logging.getLogger(self.__class__.__name__)
         self._factory = factory
         self._upnp = upnp
         self._torrent = torrent
@@ -225,7 +200,7 @@ class WebSocketFactory(object):
         return self.factory._torrent
 
     async def websocket_handler(self, request):
-        print('websocket_handler', request.remote, request.host)
+        self.log.info('websocket_handler %s %s', request.remote, request.host)
         
         ws = aiohttp.web.WebSocketResponse()
         await ws.prepare(request)
@@ -271,7 +246,7 @@ class WebSocketFactory(object):
         async def btupdate(alert):
             await self.sendMessage(self.btfileslist(alert.files), {'action':'btstatus'})
 
-        print("WS client connected", self.peer)
+        self.log.info('WS client connected %s', self.peer)
         self.factory.wsclients.add(self)
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
@@ -280,7 +255,7 @@ class WebSocketFactory(object):
         self.torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self):
-        print("WS client closed", self.ws.exception())
+        self.log.info('WS client closed %s', self.ws.exception())
         self.factory.wsclients.discard(self)
         if hasattr(self, '_upnpupdate'):
             self.upnp.remove_alert_handler(self._upnpupdate)
@@ -306,26 +281,26 @@ class WebSocketFactory(object):
                     #TODO
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local[0], urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
-                print("push to play url:", url)
+                self.log.info('push to play url: %s', url)
                 await self.upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             self.upnp.refresh()
         elif jsondata.get('action') == 'search':
             data = jsondata.pop('request', {})
             url = data.get('url')
-            print('search', url)
+            self.log.debug('search %s', url)
             ret = await self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
             await self.sendMessage(ret, jsondata)
         elif jsondata.get('action') == 'add':
             data = jsondata.pop('request', {})
             url = data.get('url')
-            print('add', url)
+            self.log.debug('add %s', url)
             async def bittorrent():
                 def remove_handlers():
                     self.torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
                     self.torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
                 async def torrent_error_alert(alert):
-                    print("torrent_error_alert", jsondata)
+                    self.log.info('torrent_error_alert %s', jsondata)
                     await self.sendMessage(None, jsondata)
                     remove_handlers()
                 async def tracker_announce_alert(alert):
