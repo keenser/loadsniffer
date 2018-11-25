@@ -530,8 +530,7 @@ class TorrentStream():
                         if not resume.is_set():
                             resume.set()
 
-                resp = StreamResponse(status=206,
-                              reason='Partial Content',
+                resp = StreamResponse(status=200,
                               headers={
                                 'accept-ranges': 'bytes',
                                 'Content-Type': mimetype,
