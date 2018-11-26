@@ -149,18 +149,21 @@ import youtube_dl
 youtube_dl.extractor._ALL_CLASSES.pop()
 
 class Info(object):
-    @staticmethod
-    def youtube_dl(url):
-        try:
-            #print('youtube_dl', url)
-            ydl = youtube_dl.YoutubeDL(
+    def __init__(self, loop):
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.loop = loop
+        self.ydl = youtube_dl.YoutubeDL(
                 params={
                     'quiet': True,
                     'cachedir': '/tmp/',
                     'youtube_include_dash_manifest': False,
                     'prefer_ffmpeg': True
                 })
-            stream = ydl.extract_info(url, download=False, process=True)
+
+    async def youtube_dl(self, url):
+        try:
+            future = self.loop.run_in_executor(None, self.ydl.extract_info, url, False)
+            stream = await asyncio.wait_for(future, 5, loop=self.loop)
             #format_selector = ydl.build_format_selector('all[height>=480]')
             #select = list(format_selector(stream.get('formats')))
             data = {}
@@ -173,7 +176,9 @@ class Info(object):
                     data['bitrate'].append({'url':i.get('url'), 'bitrate':i.get('height') or i.get('format_id')})
             return data
         except youtube_dl.utils.DownloadError as e:
-            return None
+            pass
+        except Exception as e:
+            self.log.error('youtube_dl %s', e)
 
 class WebSocketFactory(object):
     def __init__(self, loop = None, factory = None, upnp = None, torrent = None, peer = None, local = None, ws = None):
@@ -186,6 +191,7 @@ class WebSocketFactory(object):
         self.local = local
         self.ws = ws
         self.wsclients = set()
+        self.info = Info(self.factory.loop) if factory is None else None
         super().__init__()
 
     @property
@@ -294,12 +300,7 @@ class WebSocketFactory(object):
             data = jsondata.pop('request', {})
             url = data.get('url')
             self.log.debug('search %s', url)
-            ret = None
-            try:
-                future = self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
-                ret = await asyncio.wait_for(future, 5, loop=self.factory.loop)
-            except:
-                self.log.warn('search timeout %s', url)
+            ret = await self.factory.info.youtube_dl(url)
             await self.sendMessage(ret, jsondata)
         elif jsondata.get('action') == 'add':
             data = jsondata.pop('request', {})
@@ -322,13 +323,7 @@ class WebSocketFactory(object):
                 else:
                     await self.sendMessage(None, jsondata)
 
-            ret = None
-            try:
-                future = self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
-                ret = await asyncio.wait_for(future, 5, loop=self.factory.loop)
-            except:
-                self.log.warn('search timeout %s', url)
-
+            ret = await self.factory.info.youtube_dl(url)
             if ret:
                 await self.sendMessage(ret, jsondata)
             else:
