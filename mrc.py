@@ -14,8 +14,11 @@ import os.path
 import torrentstream
 import logging
 import logging.handlers
-import socket
 import mimetypes
+import youtube_dl
+
+#delete generic extractor
+youtube_dl.extractor._ALL_CLASSES.pop()
 
 class MediaDevice(object):
     def __init__(self, device):
@@ -135,18 +138,6 @@ class UPnPctrl(object):
     def refresh(self):
         self.coherence.msearch.double_discover()
 
-class JSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if hasattr(obj, "__json__"):
-            return obj.__json__()
-        elif isinstance(obj, bytes):
-            return obj.decode("utf8", "ignore")
-        else:
-            return json.JSONEncoder.default(self, obj)
-
-import youtube_dl
-#delete generic extractor
-youtube_dl.extractor._ALL_CLASSES.pop()
 
 class Info(object):
     def __init__(self, loop):
