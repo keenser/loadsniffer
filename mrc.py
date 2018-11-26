@@ -10,6 +10,7 @@ import aiohttp
 import aiofiles
 import json
 import urllib.parse
+import os.path
 import torrentstream
 import logging
 import logging.handlers
@@ -227,15 +228,19 @@ class WebSocketFactory(object):
         return [i for i in files if mimetypes.guess_type(i, strict=False)[0].startswith('video')]
 
     def btfileslist(self, infiles):
-        import socket
-        import os.path
-        prefix = 'http://{}/bt/'.format(self.local)
         response = []
         for handle in infiles:
             data = {}
             data['info_hash'] = handle['info_hash']
             data['title'] = handle['title']
-            data['files'] = [{'title': os.path.basename(i), 'url': prefix + urllib.parse.quote(i)} for i in self.videofiles(handle['files'])]
+            data['files'] = [{
+                    'title': os.path.basename(i),
+                    'url':
+                        urllib.parse.urljoin(
+                            urllib.parse.urlunsplit(['http', self.local, self.torrent.options.get('urlpath'), None, None]),
+                            urllib.parse.quote(i)
+                        )
+                } for i in self.videofiles(handle['files'])]
             response.append(data)
         return response
 
@@ -280,7 +285,7 @@ class WebSocketFactory(object):
                 if data.get('cookie'):
                     #TODO
                     print("cookie", data.get('cookie'))
-                    url = "http://{}:8080/?url={}&cookie={}".format(self.local[0], urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
+                    url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
                 self.log.info('push to play url: %s', url)
                 await self.upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
@@ -289,9 +294,9 @@ class WebSocketFactory(object):
             data = jsondata.pop('request', {})
             url = data.get('url')
             self.log.debug('search %s', url)
-            future = self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
             ret = None
             try:
+                future = self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
                 ret = await asyncio.wait_for(future, 5, loop=self.factory.loop)
             except:
                 self.log.warn('search timeout %s', url)
@@ -316,7 +321,14 @@ class WebSocketFactory(object):
                     self.torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
                 else:
                     await self.sendMessage(None, jsondata)
-            ret = await self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
+
+            ret = None
+            try:
+                future = self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
+                ret = await asyncio.wait_for(future, 5, loop=self.factory.loop)
+            except:
+                self.log.warn('search timeout %s', url)
+
             if ret:
                 await self.sendMessage(ret, jsondata)
             else:
@@ -350,13 +362,11 @@ def main():
 
     http = aiohttp.web.Application(middlewares=[rootindex])
     upnp = UPnPctrl(loop=loop, http=http, httpport=httpport)
-    torrent = torrentstream.TorrentStream(loop=loop, save_path='/opt/tmp/')
+    torrent = torrentstream.TorrentStream(loop=loop, save_path='/opt/tmp/', urlpath='/bt/')
     ws = WebSocketFactory(loop = loop, upnp = upnp, torrent = torrent)
     http.on_shutdown.append(ws.onShutdown)
 
-    http.add_subapp('/bt/', torrent.http)
-    #http.router.add_get('/info', Info().render_GET)
-    #http.router.add_get('/play', Play(upnp).render_GET)
+    http.add_subapp(torrent.options['urlpath'], torrent.http)
     http.router.add_get('/ws', ws.websocket_handler)
     http.router.add_static('/', 'static')
 
