@@ -289,7 +289,12 @@ class WebSocketFactory(object):
             data = jsondata.pop('request', {})
             url = data.get('url')
             self.log.debug('search %s', url)
-            ret = await self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
+            future = self.factory.loop.run_in_executor(None, Info.youtube_dl, url)
+            ret = None
+            try:
+                ret = await asyncio.wait_for(future, 5, loop=self.factory.loop)
+            except:
+                self.log.warn('search timeout %s', url)
             await self.sendMessage(ret, jsondata)
         elif jsondata.get('action') == 'add':
             data = jsondata.pop('request', {})
