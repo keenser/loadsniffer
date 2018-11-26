@@ -303,7 +303,7 @@ var onStartupOrOnInstalledListener = function() {
     });
 }
 chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
-    if (changeInfo.status == 'loading' && changeInfo.url !== undefined) {
+    if (changeInfo.status == 'loading' && changeInfo.url !== undefined && tab.url.startsWith('http')) {
         console.log('reload tabid:', id, changeInfo, tab);
         ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
     }
