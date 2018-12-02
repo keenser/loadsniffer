@@ -1,19 +1,18 @@
 # loadsniffer
-Chrome extension communicates with mrc.py over websocket to get media info from url, get and change status of upnp media renderers.
-Also extension tries to find media resources on the page using chrome.webRequest 
+Chrome extension grab media resources from open tabs using mrc.py daemon as backend and chrome.webRequest api.
 # mrc.py
-Communicates with media renderers on local network using aioupnp python module to send media using upnp-av.
+Communicates with media renderers on local network using upnp-av protocol.
 Find media resources from web pages using youtube-dl which can be played on media renderers.
-Uses torrentstream module to get access to media resources inside torrents.
-Uses websocket(aiohttp) to communicate with chrome extension
+Uses torrentstream.py module to stream media over torrent network.
 
+# How to run
 On server side(your home media server):
 
 $ sudo apt-get install python3-libtorrent python3-xmltodict
 
 $ sudo pip3 install youtube-dl aiohttp
 
-$ ./mrc.py &
+$ ./mrc.py
 
 On client side(your notebook):
 
