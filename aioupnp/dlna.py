@@ -5,7 +5,7 @@
 
 import logging
 import xmltodict
-import xml.etree.cElementTree as xml
+import lxml.etree as xml
 import urllib.parse
 import aiohttp
 import asyncio
@@ -35,21 +35,22 @@ class DIDLLite(dict):
 
     def VideoItem(self, itemid, parentid, restricted, title, resource):
         item = xml.Element('item', {'id': str(itemid) , 'parentID': str(parentid), 'restricted': str(restricted)})
-        _title = xml.Element(n('dc', 'title'))
+        _title = xml.SubElement(item, n('dc', 'title'))
         _title.text = title
-        _class = xml.Element(n('upnp', 'class'))
+        _class = xml.SubElement(item, n('upnp', 'class'))
         _class.text = 'object.item.videoItem'
-        _date = xml.Element(n('dc', 'date'))
+        _date = xml.SubElement(item, n('dc', 'date'))
         _date.text = '2003-07-23T01:18:00+02:00'
-        item.extend((_title, _class, _date, resource))
+        item.append(resource)
         return item
 
     def Resource(self, protocolInfo, text):
         _resource = xml.Element('res', protocolInfo=protocolInfo)
         _resource.text = text
         return _resource
+
     def toString(self, data):
-        return xml.tostring(data, encoding='utf8').decode()
+        return xml.tostring(data, encoding='utf8', xml_declaration=True).decode()
 
     def fromString(self, data):
         return xmltodict.parse(data, dict_constructor=dict)
@@ -64,18 +65,20 @@ class DLNAAction:
     async def call(self, **data):
         url = urllib.parse.urljoin(self.service.location, self.service.get('controlURL'))
         servicetype = self.service.get('serviceType')
-        data['@xmlns:u'] = servicetype
-        payload = {
-                's:Envelope':{
-                    '@xmlns:s': 'http://schemas.xmlsoap.org/soap/envelope/',
-                    '@s:encodingStyle': 'http://schemas.xmlsoap.org/soap/encoding/',
-                    's:Body': {
-                        'u:{}'.format(self.action): data
-                        }
-                    }
-                }
+
+        ns = {'s': 'http://schemas.xmlsoap.org/soap/envelope/'}
+        n = lambda n, e: xml.QName(ns[n], e)
+        e = xml.Element(n('s','Envelope'), attrib={n('s', 'encodingStyle'): "http://schemas.xmlsoap.org/soap/encoding/"}, nsmap=ns)
+        b = xml.SubElement(e, n('s','Body'))
+        a = xml.SubElement(b, xml.QName(servicetype, self.action), nsmap={'u': servicetype})
+        for name, val in data.items():
+            i = xml.SubElement(a, name)
+            i.text = str(val)
+
+        datastr = xml.tostring(e, encoding='utf8', xml_declaration=True, pretty_print=True).decode()
+
         async with aiohttp.ClientSession(read_timeout = 5, raise_for_status=True) as session:
-            async with session.post(url, data=xmltodict.unparse(payload), 
+            async with session.post(url, data=datastr,
                 headers={
                     'SOAPACTION':'"{}#{}"'.format(servicetype, self.action),
                     'content-type': 'text/xml; charset="utf-8"'
