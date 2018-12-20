@@ -4,20 +4,20 @@
 #
 
 import mimetypes
-import libtorrent
-import json
 import glob
 import os
 import asyncio
-import aiofiles
-from aiohttp import web
 from collections import namedtuple
 import logging
 import binascii
+import aiofiles
+from aiohttp import web
+import libtorrent
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
-class DynamicTorrentProducer(object):
+class DynamicTorrentProducer:
+    '''read data using read_piece + read_piece_alert'''
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info("starting %d %d", offset, size)
@@ -28,6 +28,7 @@ class DynamicTorrentProducer(object):
         self.size = size or fileinfo.info.size - offset
         self.lastoffset = self.offset + self.size - 1
         self.priority_window = None
+        self.piece = None
         self.buffer = {}
 
     def read_piece_alert(self, alert):
@@ -77,19 +78,19 @@ class DynamicTorrentProducer(object):
         self.log.info("start %d %d %d", self.piece.piece, self.lastpiece.piece, self.piecelength)
 
         # priority window size 4Mb * 8
-        priorityblock = int((4 * 1024 * 1024 )/ self.piecelength)
+        priorityblock = int((4 * 1024 * 1024) / self.piecelength)
         # piece_length more than 4Mb ?
         if priorityblock < 1:
             priorityblock = 1
         elif priorityblock > 8:
             priorityblock = 8
-        self.prioritymask = [ i for i in [TorrentStream.HIGHEST,TorrentStream.HIGHEST,6,5,4,3,2,1] for _ in range(priorityblock)]
+        self.prioritymask = [i for i in [TorrentStream.HIGHEST, TorrentStream.HIGHEST, 6, 5, 4, 3, 2, 1] for _ in range(priorityblock)]
         self.log.info("prioritymask %s", self.prioritymask)
 
         self.fileinfo.handle.resume()
         self.slide(self.piece.piece)
 
-    def slide(self, offset = None):
+    def slide(self, offset=None):
         if offset is not None:
             self.priority_window = offset
         window = self.priority_window
@@ -112,9 +113,10 @@ class DynamicTorrentProducer(object):
         self.log.debug('slide %s', data)
 
 
-# speedup reading pieces using direct access to file on filesystem
 class StaticTorrentProducer(DynamicTorrentProducer):
+    '''speedup reading pieces using direct access to file on filesystem'''
     async def read_piece_1(self):
+        '''open file every iteration'''
         async with aiofiles.open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), mode='rb') as fileObject:
             await fileObject.seek(self.offset)
             data = await fileObject.read(self.piecelength - self.piece.start)
@@ -129,8 +131,9 @@ class StaticTorrentProducer(DynamicTorrentProducer):
                 self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
             else:
                 raise asyncio.CancelledError
-        
+
     async def read_piece(self):
+        '''open file ones'''
         # probably file exsists on filesystem because have_piece()==True success check
         # now we can open it
         if not hasattr(self, 'fileObject') or self.fileObject.closed:
@@ -143,7 +146,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             readlen = self.lastpiece.start - self.piece.start + 1
         #print("self.piecelength {}\nself.piece.start {}\nself.lastoffset {}\nself.offset {}\nself.lastpiece.start {}", self.piecelength, self.piece.start, self.lastoffset, self.offset, self.lastpiece.start)
         data = await self.fileObject.read(readlen)
- 
+
         if data:
             self.offset += len(data)
             await self.request.write(data)
@@ -167,10 +170,12 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
 
 class TorrentProducer(StaticTorrentProducer):
+    '''inherit actual producer method'''
     pass
 
 
-class Files_List_Update_Alert(object):
+class FilesListUpdateAlert:
+    '''custom libtorrent alert called from TorrentStream'''
     _what = 'files_list_update_alert'
     _message = '{} files updated'
     def __init__(self, files):
@@ -181,7 +186,8 @@ class Files_List_Update_Alert(object):
         return self._message.format(len(self.files))
 
 
-class TorrentStream():
+class TorrentStream:
+    '''Main class'''
     PAUSE = 0
     LOW = 1
     NORMAL = 4
@@ -203,12 +209,12 @@ class TorrentStream():
         self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
 
         session.set_alert_mask(
-                libtorrent.alert.category_t.tracker_notification |
-                libtorrent.alert.category_t.storage_notification |
-                libtorrent.alert.category_t.progress_notification |
-                libtorrent.alert.category_t.status_notification |
-                libtorrent.alert.category_t.error_notification
-                )
+            libtorrent.alert.category_t.tracker_notification |
+            libtorrent.alert.category_t.storage_notification |
+            libtorrent.alert.category_t.progress_notification |
+            libtorrent.alert.category_t.status_notification |
+            libtorrent.alert.category_t.error_notification
+            )
         session.start_dht()
         session.start_lsd()
         session.start_upnp()
@@ -236,9 +242,9 @@ class TorrentStream():
             try:
                 if os.path.exists(file):
                     with open(file, 'rb') as fd:
-                        self.add_torrent(resume_data = fd.read())
-            except (IOError, EOFError, RuntimeError) as e:
-                self.log.error("Unable to load fastresume %s", e)
+                        self.add_torrent(resume_data=fd.read())
+            except (IOError, EOFError, RuntimeError) as exception:
+                self.log.error("Unable to load fastresume %s", exception)
 
         def torrent_checked_alert(alert):
             #alert.handle.resume()
@@ -249,21 +255,21 @@ class TorrentStream():
             for i in range(alert.handle.get_torrent_info().num_files()):
                 info = alert.handle.get_torrent_info().file_at(i)
                 self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
-            self._handle_alert([Files_List_Update_Alert(self.list_files())])
+            self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_added_alert(alert):
             if alert.handle.get_torrent_info():
                 metadata_received_alert(alert)
 
         def tracker_announce_alert(alert):
-            self._handle_alert([Files_List_Update_Alert(self.list_files())])
+            self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_removed_alert(alert):
             info_hash = str(alert.handle.info_hash())
             for path, handle in dict(self._files_list).items():
                 if str(handle.handle.info_hash()) == info_hash:
                     del self._files_list[path]
-                    self._handle_alert([Files_List_Update_Alert(self.list_files())])
+                    self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_error_alert(alert):
             self.session.remove_torrent(alert.handle)
@@ -329,7 +335,7 @@ class TorrentStream():
             # save_info_dict
             # only_if_modified
             handle.save_resume_data(libtorrent.save_resume_flags_t.flush_disk_cache<<1 | libtorrent.save_resume_flags_t.flush_disk_cache<<2)
- 
+
     def add_alert_handler(self, alert, handler, handle=None):
         if handle:
             alert = str(handle.info_hash()) + ':' + alert
@@ -344,24 +350,23 @@ class TorrentStream():
             if not self._alert_handlers[alert]:
                 self._alert_handlers.pop(alert)
         else:
-            self.log.warn("remove alert %s handler %s not in handlers", alert, handler)
+            self.log.warning("remove alert %s handler %s not in handlers", alert, handler)
 
-    def add_torrent(self, url = None, resume_data = None):
+    def add_torrent(self, url=None, resume_data=None):
         add_torrent_params = {}
         if resume_data:
             add_torrent_params['resume_data'] = resume_data
             add_torrent_params['flag_override_resume_data'] = True
         if url:
             add_torrent_params['url'] = url
-        if len(add_torrent_params):
+        if add_torrent_params:
             add_torrent_params['save_path'] = self.options.get('save_path')
             add_torrent_params['storage_mode'] = libtorrent.storage_mode_t.storage_mode_sparse
             add_torrent_params['auto_managed'] = False
             add_torrent_params['paused'] = False
             self.session.async_add_torrent(add_torrent_params)
             return True
-        else:
-            return False
+        return False
 
     def remove_torrent(self, info_hash):
         try:
@@ -397,7 +402,6 @@ class TorrentStream():
             for handle in self.session.get_torrents():
                 if handle.is_valid():
                     handle.flush_cache()
-            gc.collect()
             return {'status': 'flushed'}
         except TypeError:
             return {'error': 'incorrect hash'}
@@ -423,7 +427,7 @@ class TorrentStream():
 
     def status(self):
         def space_break(string, length):
-            return ' '.join(string[i:i+length] for i in range(0,len(string),length))
+            return ' '.join(string[i:i+length] for i in range(0, len(string), length))
         status = {}
         sst = self.session.status()
         status['version'] = libtorrent.version
@@ -479,15 +483,16 @@ class TorrentStream():
 
         def help():
             def rstrip(pattern, string):
-                return string[:-len(pattern)] if string.endswith(pattern) and len(pattern) else string
+                return string[:-len(pattern)] if string.endswith(pattern) and pattern else string
 
             prepath = '{}{}'.format(request.host, rstrip(action, request.path))
-            return {'example': ['{p}add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
-                                '{p}rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
-                                '{p}info'.format(p=prepath),
-                                '{p}ls'.format(p=prepath),
-                                '{p}file.avi'.format(p=prepath),
-                              ]}
+            return {'example': [
+                '{p}add?url=http%3A%2F%2Fnewstudio.tv%2Fdownload.php%3Fid%3D17544'.format(p=prepath),
+                '{p}rm?url=3bebb88255c4e3a2080b514a47a41fe75cbd8a40'.format(p=prepath),
+                '{p}info'.format(p=prepath),
+                '{p}ls'.format(p=prepath),
+                '{p}file.avi'.format(p=prepath),
+                ]}
 
         if action == 'add' and url:
             self.add_torrent(url)
@@ -507,18 +512,18 @@ class TorrentStream():
                 ret = help()
             else:
                 fileForReading = self._files_list[action]
-                mimetype, encoding = mimetypes.guess_type(action, strict=False)
+                mimetype, _ = mimetypes.guess_type(action, strict=False)
                 filesize = fileForReading.info.size
-                try:
-                    ranges = request.http_range
-                    offset = ranges.start or 0
-                    stop = ranges.stop or filesize
-                    rangestr = 'bytes {}-{}/{}'.format(offset, stop - 1, filesize)
-                    size = stop - offset
-                except:
-                    rangestr = 'bytes */{}'.format(filesize)
-                    offset = 0
-                    size = filesize
+
+                ranges = request.http_range
+                offset = ranges.start or 0
+                stop = ranges.stop or filesize
+                rangestr = 'bytes {}-{}/{}'.format(offset, stop - 1, filesize)
+                size = stop - offset
+                #except:
+                #    rangestr = 'bytes */{}'.format(filesize)
+                #    offset = 0
+                #    size = filesize
 
                 resume = asyncio.Event()
 
@@ -527,19 +532,19 @@ class TorrentStream():
                         self.resume()
                         await super().write(data)
 
-                    def resume(self):
+                    @staticmethod
+                    def resume():
                         if not resume.is_set():
                             resume.set()
 
                 resp = StreamResponse(status=200,
-                              headers={
-                                'accept-ranges': 'bytes',
-                                'Content-Type': mimetype,
-                                'content-length': str(size),
-                                'content-range': rangestr,
-                                'Content-Disposition': 'inline; filename="{}"'.format(os.path.basename(action))
-                                })
-
+                                      headers={
+                                          'accept-ranges': 'bytes',
+                                          'Content-Type': mimetype,
+                                          'content-length': str(size),
+                                          'content-range': rangestr,
+                                          'Content-Disposition': 'inline; filename="{}"'.format(os.path.basename(action))}
+                                     )
 
                 if request.method == 'HEAD':
                     return resp
@@ -562,6 +567,7 @@ class TorrentStream():
         return web.json_response(ret)
 
 def main():
+    ''' main loop '''
     loop = asyncio.get_event_loop()
 
     app = web.Application(loop=loop)
