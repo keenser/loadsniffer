@@ -47,20 +47,21 @@ class EventsServer:
             body = await request.text()
             service = self.sidtoservice.get(request.headers.get('SID'))
             self.log.warn('event %s %s', request.headers.get('SID'), service)
-            events = self.events.setdefault(service.uid, {})
+            if service:
+                events = self.events.setdefault(service.uid, {})
 
-            d = xmltodict.parse(body, dict_constructor=dict)
-            lastchange = d.get('e:propertyset', {}).get('e:property', {}).get('LastChange')
-            if lastchange:
-                lastevents = xmltodict.parse(lastchange, dict_constructor=dict)
-                eventsdict = lastevents.get('Event', {}).get('InstanceID', {})
-                for var, data in eventsdict.items():
-                    if isinstance(data, str):
-                        continue
-                    event = events.setdefault(var, Event(var))
-                    event.update(data.get('@val'))
-                self.log.debug('events %s', self.events)
-                notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
+                d = xmltodict.parse(body, dict_constructor=dict)
+                lastchange = d.get('e:propertyset', {}).get('e:property', {}).get('LastChange')
+                if lastchange:
+                    lastevents = xmltodict.parse(lastchange, dict_constructor=dict)
+                    eventsdict = lastevents.get('Event', {}).get('InstanceID', {})
+                    for var, data in eventsdict.items():
+                        if isinstance(data, str):
+                            continue
+                        event = events.setdefault(var, Event(var))
+                        event.update(data.get('@val'))
+                    self.log.debug('events %s', self.events)
+                    notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
         return aiohttp.web.Response()
 
     async def subscribe(self, service, callback):
