@@ -255,7 +255,7 @@ class WebSocketFactory:
         return self.factory._torrent
 
     async def websocket_handler(self, request):
-        self.log.info('websocket_handler %s %s', request.remote, request.host)
+        self.log.debug('websocket_handler %s %s', request.remote, request.host)
 
         ws = aiohttp.web.WebSocketResponse()
         await ws.prepare(request)
@@ -309,7 +309,7 @@ class WebSocketFactory:
         async def btupdate(alert):
             await self.sendMessage(self.btfileslist(alert.files), {'action':'btstatus'})
 
-        self.log.info('WS client connected %s', self.peer)
+        self.log.info('WS client connected %s %s', self.peer, self.local)
         self.factory.wsclients.add(self)
         # handle function id must be same on adding and removing alert
         self._upnpupdate = upnpupdate
@@ -318,7 +318,7 @@ class WebSocketFactory:
         self.torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self):
-        self.log.info('WS client closed %s', self.ws.exception())
+        self.log.info('WS client closed %s %s with exception: %s', self.peer, self.local, self.ws.exception())
         self.factory.wsclients.discard(self)
         if self._upnpupdate:
             self.upnp.remove_alert_handler(self._upnpupdate)
@@ -406,10 +406,11 @@ def main():
 
     loop.set_exception_handler(exception_handler)
 
-    logging.getLogger('SSDPServer').setLevel(logging.INFO)
+    logging.getLogger('SSDPServer').setLevel(logging.WARN)
     logging.getLogger('EventsServer').setLevel(logging.INFO)
-    logging.getLogger('TorrentProducer').setLevel(logging.WARN)
+    logging.getLogger('TorrentProducer').setLevel(logging.INFO)
     logging.getLogger('TorrentStream').setLevel(logging.INFO)
+    logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
 
     httpport = 8883
 
@@ -423,6 +424,7 @@ def main():
     http.router.add_get('/ws', ws.websocket_handler)
     http.router.add_static('/', 'static')
 
+    logging.info('listening aiohttp server %s on port %d', aiohttp.__version__, httpport)
     handler = http.make_handler()
     server = loop.create_server(handler, None, httpport)
     server = loop.run_until_complete(server)

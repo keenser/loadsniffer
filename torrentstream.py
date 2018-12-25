@@ -20,7 +20,6 @@ class DynamicTorrentProducer:
     '''read data using read_piece + read_piece_alert'''
     def __init__(self, stream, request, fileinfo, offset=0, size=None):
         self.log = logging.getLogger(self.__class__.__name__)
-        self.log.info("starting %d %d", offset, size)
         self.stream = stream
         self.request = request
         self.fileinfo = fileinfo
@@ -30,6 +29,7 @@ class DynamicTorrentProducer:
         self.priority_window = None
         self.piece = None
         self.buffer = {}
+        self.log.info("starting %s offset: %d size: %d", self.fileinfo.info.path, self.offset, self.size)
 
     def read_piece_alert(self, alert):
         self.log.debug("read_piece_alert %d %d", alert.piece, alert.size)
@@ -65,7 +65,7 @@ class DynamicTorrentProducer:
             await self.read_piece()
 
     async def stopProducing(self):
-        self.log.info("stopProducing")
+        self.log.info("stopProducing %s", self.fileinfo.info.path)
         self.stream.remove_alert_handler('read_piece_alert', self.read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self.piece_finished_alert, self.fileinfo.handle)
 
@@ -75,7 +75,7 @@ class DynamicTorrentProducer:
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
         self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
         self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
-        self.log.info("start %d %d %d", self.piece.piece, self.lastpiece.piece, self.piecelength)
+        self.log.debug("start %d %d %d", self.piece.piece, self.lastpiece.piece, self.piecelength)
 
         # priority window size 4Mb * 8
         priorityblock = int((4 * 1024 * 1024) / self.piecelength)
@@ -85,7 +85,7 @@ class DynamicTorrentProducer:
         elif priorityblock > 8:
             priorityblock = 8
         self.prioritymask = [i for i in [TorrentStream.HIGHEST, TorrentStream.HIGHEST, 6, 5, 4, 3, 2, 1] for _ in range(priorityblock)]
-        self.log.info("prioritymask %s", self.prioritymask)
+        self.log.debug("prioritymask %s", self.prioritymask)
 
         self.fileinfo.handle.resume()
         self.slide(self.piece.piece)
