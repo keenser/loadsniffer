@@ -104,7 +104,7 @@ class SSDPProtocol(asyncio.DatagramProtocol):
                 headers[key.lower()] = value.strip()
             except ValueError:
                 pass
- 
+
         if cmd.startswith('M-SEARCH *'):
             self.server.discoveryRequest(headers, addr)
         elif cmd.startswith('NOTIFY *'):
@@ -154,7 +154,7 @@ class SSDPServer:
         self.resend_mseatch_loop.cancel()
         try:
             self.loop.run_until_complete(self.resend_mseatch_loop)
-        except asyncio.CancelledError:  
+        except asyncio.CancelledError:
             pass
 
     def register(self, headers, addr, manifestation='remote', silent=False):
@@ -202,17 +202,17 @@ class SSDPServer:
     async def resendMSearch(self):
         while True:
             req = ['M-SEARCH * HTTP/1.1',
-                    'HOST: %s:%d' % (SSDP_ADDR, SSDP_PORT),
-                    'MAN: "ssdp:discover"',
-                    'MX: 5',
-                    'ST: ssdp:all',
-                    'USER-AGENT: {}/{}'.format(__name__, version),
-                    '', '']
+                   'HOST: %s:%d' % (SSDP_ADDR, SSDP_PORT),
+                   'MAN: "ssdp:discover"',
+                   'MX: 5',
+                   'ST: ssdp:all',
+                   'USER-AGENT: {}/{}'.format(__name__, version),
+                   '', '']
             req = '\r\n'.join(req)
 
             try:
                 self.transport.sendto(req.encode(), (SSDP_ADDR, SSDP_PORT))
             except (socket.error) as msg:
-                self.info("failure sending out the discovery message: %r", msg)
+                self.log.info("failure sending out the discovery message: %r", msg)
             await asyncio.sleep(120)
 

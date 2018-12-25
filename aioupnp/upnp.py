@@ -5,9 +5,9 @@
 
 import asyncio
 import logging
-import aiohttp
-import xmltodict
 import functools
+import xmltodict
+import aiohttp
 from . import notify
 from . import ssdp
 from . import dlna
@@ -26,7 +26,7 @@ class TCPConnector(aiohttp.connector.TCPConnector):
         self._factory = functools.partial(ResponseHandler, loop=self._loop)
 
 
-class UPNPDevice(object):
+class UPNPDevice:
     def __init__(self, description={}, parent=None):
         self.description = description
         self.parent = parent
@@ -157,24 +157,24 @@ class UPNPServer:
                     device['localhost'] = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
                     return device
         except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
-            self.log.warn('%s: %s', err.__class__.__name__, err)
+            self.log.warning('%s: %s', err.__class__.__name__, err)
             return
- 
+
     async def create_device(self, device=None):
-        self.log.warn('create %s', device)
+        self.log.warning('create %s', device)
         description = await self.parse_description(device.get('location'))
         if description:
             self.devices[device.get('usn')] = UPNPRootDevice(description, device, self.events)
 
     async def remove_device(self, device=None):
-        self.log.warn('remove %s', device)
+        self.log.warning('remove %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.pop(device.get('usn'))
             notify.send('UPnP.RootDevice.removed', device=upnpdevice)
             await upnpdevice.shutdown()
 
     async def update_device(self, device=None):
-        self.log.warn('update %s', device)
+        self.log.warning('update %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.get(device.get('usn'))
             await upnpdevice.update_callback()

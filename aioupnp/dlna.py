@@ -4,15 +4,12 @@
 #
 
 import logging
-import xmltodict
-import lxml.etree as xml
 import urllib.parse
 import aiohttp
-import asyncio
+import lxml.etree as xml
+import xmltodict
 
-n = lambda n, e: "{{{}}}{}".format(DIDLLite.namespaces[n], e)
-
-class DIDLLite(dict):
+class DIDLLite:
     namespaces = {
         'upnp': 'urn:schemas-upnp-org:metadata-1-0/upnp/',
         'e': 'urn:schemas-upnp-org:event-1-0',
@@ -34,7 +31,9 @@ class DIDLLite(dict):
         return element
 
     def VideoItem(self, itemid, parentid, restricted, title, resource):
-        item = xml.Element('item', {'id': str(itemid) , 'parentID': str(parentid), 'restricted': str(restricted)})
+        n = lambda n, e: xml.QName(self.namespaces[n], e)
+
+        item = xml.Element('item', {'id': str(itemid), 'parentID': str(parentid), 'restricted': str(restricted)})
         _title = xml.SubElement(item, n('dc', 'title'))
         _title.text = title
         _class = xml.SubElement(item, n('upnp', 'class'))
@@ -68,8 +67,9 @@ class DLNAAction:
 
         ns = {'s': 'http://schemas.xmlsoap.org/soap/envelope/'}
         n = lambda n, e: xml.QName(ns[n], e)
-        e = xml.Element(n('s','Envelope'), attrib={n('s', 'encodingStyle'): "http://schemas.xmlsoap.org/soap/encoding/"}, nsmap=ns)
-        b = xml.SubElement(e, n('s','Body'))
+
+        e = xml.Element(n('s', 'Envelope'), attrib={n('s', 'encodingStyle'): "http://schemas.xmlsoap.org/soap/encoding/"}, nsmap=ns)
+        b = xml.SubElement(e, n('s', 'Body'))
         a = xml.SubElement(b, xml.QName(servicetype, self.action), nsmap={'u': servicetype})
         for name, val in data.items():
             i = xml.SubElement(a, name)
@@ -77,13 +77,13 @@ class DLNAAction:
 
         datastr = xml.tostring(e, encoding='utf8', xml_declaration=True, pretty_print=True).decode()
 
-        async with aiohttp.ClientSession(read_timeout = 5, raise_for_status=True) as session:
+        async with aiohttp.ClientSession(read_timeout=5, raise_for_status=True) as session:
             async with session.post(url, data=datastr,
-                headers={
-                    'SOAPACTION':'"{}#{}"'.format(servicetype, self.action),
-                    'content-type': 'text/xml; charset="utf-8"'
-                }
-                ) as resp:
+                        headers={
+                            'SOAPACTION':'"{}#{}"'.format(servicetype, self.action),
+                            'content-type': 'text/xml; charset="utf-8"'
+                        }
+                    ) as resp:
                 return resp
 
 
@@ -115,7 +115,7 @@ class DLNAService(dict):
 
     async def subscribe(self, variable, callback):
         self.callbacks[variable] = callback
-        if self.events_subscription == False:
+        if self.events_subscription is False:
             self.events_subscription = True
             #url = urllib.parse.urljoin(self.location, self.get('eventSubURL'))
             await self.device.events.subscribe(self, self.eventscallback)
