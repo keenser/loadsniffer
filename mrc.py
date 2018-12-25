@@ -11,10 +11,8 @@ import os.path
 import logging
 import logging.handlers
 import mimetypes
-#import async_timeout
 import multiprocessing
 import youtube_dl
-#import aiofiles
 import aiohttp
 import aioupnp
 import torrentstream
