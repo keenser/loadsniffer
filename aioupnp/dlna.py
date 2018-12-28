@@ -91,7 +91,6 @@ class DLNAService(dict):
     def __init__(self, device, service):
         super().__init__(service)
         self.device = device
-        #self.lastevents = {}
         self.events_subscription = False
         self.callbacks = {}
 
@@ -100,15 +99,10 @@ class DLNAService(dict):
 
     async def shutdown(self):
         if self.events_subscription:
-            #url = urllib.parse.urljoin(self.location, self.get('eventSubURL'))
             await self.device.events.unsubscribe(self)
 
     async def eventscallback(self, data):
-        #d = xmltodict.parse(data, dict_constructor=dict)
-        #lastevent = d.get('e:propertyset', {}).get('e:property', {}).get('LastChange')
-        #self.lastevents = xmltodict.parse(lastevent, dict_constructor=dict)
         for variable, callback in self.callbacks.items():
-            #callback(self.lastevents.get('Event', {}).get('InstanceID', {}).get(variable, {}).get('@val'))
             event = data.get(variable)
             event.service = self
             callback(event)
@@ -117,7 +111,6 @@ class DLNAService(dict):
         self.callbacks[variable] = callback
         if self.events_subscription is False:
             self.events_subscription = True
-            #url = urllib.parse.urljoin(self.location, self.get('eventSubURL'))
             await self.device.events.subscribe(self, self.eventscallback)
 
     async def resubscribe(self):

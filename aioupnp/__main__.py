@@ -7,7 +7,7 @@ import asyncio
 import logging
 import aiohttp.web
 from . import notify
-from . import upnp 
+from . import upnp
 
 def main():
     logging.basicConfig(level=logging.WARN)
