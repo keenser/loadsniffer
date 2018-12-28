@@ -107,7 +107,7 @@ class EventsServer:
                             headers={
                                 'SID': sid,
                             }) as resp:
-                            self.log.warn('resubscribe %s %s', resp, service.url) 
+                            self.log.warn('resubscribe %s %s', resp.headers.get('SID'), service.url)
                 finally:
                     async with session.request('UNSUBSCRIBE', service.url,
                         headers={

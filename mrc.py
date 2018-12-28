@@ -349,13 +349,13 @@ class WebSocketFactory:
         elif jsondata.get('action') == 'search':
             data = jsondata.pop('request', {})
             url = data.get('url')
-            self.log.debug('search %s', url)
+            self.log.info('search %s', url)
             ret = await self.factory.info.youtube_dl(url)
             await self.sendMessage(ret, jsondata)
         elif jsondata.get('action') == 'add':
             data = jsondata.pop('request', {})
             url = data.get('url')
-            self.log.debug('add %s', url)
+            self.log.info('add %s', url)
             async def bittorrent():
                 def remove_handlers():
                     self.torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
