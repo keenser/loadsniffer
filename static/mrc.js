@@ -1,4 +1,18 @@
-var mrcurl = "ws://nuc.grsk.eu.org:8881"
+function urlcfg(callback) {
+    let urllocation = window.location.href;
+    if ( urllocation.startsWith("chrome-extension") ) {
+        chrome.storage.sync.get({
+            mrcserver: 'ws://localhost:8883/ws'
+        }, function(items) {
+            callback(items.mrcserver);
+        });
+    }
+    else {
+        let mrcurl = urllocation.match(/:\/\/([^\/]+)/i);
+        callback("ws://" + mrcurl[1] + "/ws");
+    }
+}
+
 function MRCServer(url, handler) {
     let mrc = {};
     let doclose = false;
@@ -13,7 +27,9 @@ function MRCServer(url, handler) {
     }
     mrc.connect = function(opencallback, closecallback) {
         doclose = false;
-        websocket = new WebSocket(mrc.url);
+        mrc.url(function(url) {
+        console.log("url", url);
+        websocket = new WebSocket(url);
         websocket.binaryType = "arraybuffer";
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
@@ -36,10 +52,11 @@ function MRCServer(url, handler) {
                 handler(jsondata);
             }
         }
+        });
     }
     mrc.sendMessage = function(data, callback) {
-        console.debug('websocket >', data);
-        if (websocket && websocket.readyState) {
+        if (websocket && websocket.readyState == 1) {
+            console.debug('websocket >', data);
             let senddata = data;
             if (callback !== undefined) {
                 let currentid = uid++;
@@ -51,7 +68,7 @@ function MRCServer(url, handler) {
     }
     return mrc;
 }
-var mrc = new MRCServer(mrcurl,function(message) {
+var mrc = new MRCServer(urlcfg, function(message) {
     console.log("ws message", message);
     if (message.action == 'btstatus') {
         UpdateBTStatus(message.response);
