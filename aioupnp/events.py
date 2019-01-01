@@ -100,15 +100,20 @@ class EventsServer:
                         timeout = int(''.join(filter(str.isdigit, resp.headers.get('TIMEOUT'))))
                         self.sidtoservice[sid] = service
                         notify.connect('UPnP.DLNA.Event.{}'.format(sid), callback)
-                        self.log.warn('subscribe %s %s', sid, service.url)
+                        self.log.warn('subscribe %s[%s] event SID:%s', service.device.friendlyName, service.serviceType, sid)
                     while True:
                         await asyncio.sleep(timeout/2)
                         async with session.request('SUBSCRIBE', service.url,
                             headers={
                                 'SID': sid,
                             }) as resp:
-                            self.log.warn('resubscribe %s %s', resp.headers.get('SID'), service.url)
+                            self.log.warn('resubscribe %s[%s] event SID:%s', service.device.friendlyName, service.serviceType, resp.headers.get('SID'))
                 finally:
+                    notify.disconnect('UPnP.DLNA.Event.{}'.format(sid), callback)
+                    if sid in self.sidtoservice:
+                        service = self.sidtoservice.pop(sid)
+                        if service.uid in self.events:
+                            self.events.pop(service.uid)
                     async with session.request('UNSUBSCRIBE', service.url,
                         headers={
                             'SID': sid,
