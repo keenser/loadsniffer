@@ -569,9 +569,11 @@ class TorrentStream:
                     while True:
                         resume.clear()
                         await producer.resumeProducing()
-                        await resume.wait()
-                except asyncio.CancelledError:
-                    raise
+                        #await resume.wait()
+                        try:
+                            await asyncio.wait_for(resume.wait(), 5)
+                        except asyncio.TimeoutError:
+                            pass
                 finally:
                     await producer.stopProducing()
 
