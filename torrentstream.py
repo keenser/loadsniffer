@@ -210,6 +210,7 @@ class TorrentStream:
 
         self.http = web.Application()
         self.http.router.add_get('/{action:.*}', self.render_GET)
+        self.http.on_shutdown.append(self.shutdown)
 
         self.log.info("libtorrent %s", libtorrent.version)
         self.session = session = libtorrent.session()
@@ -486,9 +487,9 @@ class TorrentStream:
             status[info_hash] = s
         return status
 
-    def shutdown(self):
+    async def shutdown(self, app):
         self.queue_event.set()
-        self.loop.run_until_complete(asyncio.wait([self.queue_loop]))
+        await asyncio.wait([self.queue_loop])
         self.log.info("shutdown done")
 
     async def render_GET(self, request):
@@ -583,23 +584,15 @@ class TorrentStream:
 
 def main():
     ''' main loop '''
+    logging.basicConfig(level=logging.DEBUG)
     loop = asyncio.get_event_loop()
 
-    app = web.Application(loop=loop)
+    app = web.Application()
 
     torrentstream = TorrentStream(save_path='/opt/tmp/aiohttp', loop=loop)
     app.add_subapp('/bt/', torrentstream.http)
 
-    handler = app.make_handler()
-    server = loop.create_server(handler, None, 9999)
-    loop.run_until_complete(server)
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        print("Shutting Down!")
-        torrentstream.shutdown()
-        loop.run_until_complete(handler.shutdown(60.0))
-        loop.close()
+    web.run_app(app, port=9999)
 
 if __name__ == '__main__':
     main()

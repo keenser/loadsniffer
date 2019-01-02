@@ -433,7 +433,6 @@ def main():
         pass
     finally:
         upnp.shutdown()
-        torrent.shutdown()
         loop.run_until_complete(http.shutdown())
         loop.run_until_complete(handler.shutdown(60.0))
         loop.close()
