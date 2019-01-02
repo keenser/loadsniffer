@@ -70,7 +70,7 @@ class DynamicTorrentProducer:
 
     async def stopProducing(self):
         '''stop torrent download'''
-        self.log.info("stopProducing %s", self.fileinfo.info.path)
+        self.log.info("stopProducing %s size: %d", self.fileinfo.info.path, self.size)
         self.stream.remove_alert_handler('read_piece_alert', self._read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self._piece_finished_alert, self.fileinfo.handle)
 
@@ -150,7 +150,6 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             readlen = self.piecelength - self.piece.start
         else:
             readlen = self.lastpiece.start - self.piece.start + 1
-        #print("self.piecelength {}\nself.piece.start {}\nself.lastoffset {}\nself.offset {}\nself.lastpiece.start {}", self.piecelength, self.piece.start, self.lastoffset, self.offset, self.lastpiece.start)
         data = await self.fileObject.read(readlen)
 
         if data:
