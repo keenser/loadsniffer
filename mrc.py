@@ -351,6 +351,7 @@ class WebSocketFactory:
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
                 self.log.info('push to play url: %s', url)
+                #TODO: change url if localhost
                 await self.upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             await self.upnp.refresh()
