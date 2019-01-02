@@ -536,10 +536,7 @@ class TorrentStream:
                 stop = ranges.stop or filesize
                 rangestr = 'bytes {}-{}/{}'.format(offset, stop - 1, filesize)
                 size = stop - offset
-                #except:
-                #    rangestr = 'bytes */{}'.format(filesize)
-                #    offset = 0
-                #    size = filesize
+                status = 200 if ranges.start is None and ranges.stop is None else 206
 
                 resume = asyncio.Event()
 
@@ -553,7 +550,7 @@ class TorrentStream:
                         if not resume.is_set():
                             resume.set()
 
-                resp = StreamResponse(status=200,
+                resp = StreamResponse(status=status,
                                       headers={
                                           'accept-ranges': 'bytes',
                                           'Content-Type': mimetype,
