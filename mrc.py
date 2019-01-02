@@ -12,13 +12,18 @@ import logging
 import logging.handlers
 import mimetypes
 import multiprocessing
-import youtube_dl
 import aiohttp
 import aioupnp
 import torrentstream
 
 #delete generic extractor
-youtube_dl.extractor._ALL_CLASSES.pop()
+have_youtube_dl = False
+try:
+    import youtube_dl
+    youtube_dl.extractor._ALL_CLASSES.pop()
+    have_youtube_dl = True
+except ModuleNotFoundError:
+    pass
 
 class MediaDevice:
     def __init__(self, device):
@@ -215,6 +220,8 @@ class Info:
             pass
 
     async def youtube_dl(self, url):
+        if not have_youtube_dl:
+            return None
         pool = CancellablePool()
         task = self.loop.create_task(pool.apply(self.extract_info, url))
         try:
