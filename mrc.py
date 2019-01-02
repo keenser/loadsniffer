@@ -8,17 +8,23 @@ import asyncio
 import json
 import urllib.parse
 import os.path
+import sys
 import logging
 import logging.handlers
 import mimetypes
 import multiprocessing
-import youtube_dl
 import aiohttp
 import aioupnp
 import torrentstream
 
 #delete generic extractor
-youtube_dl.extractor._ALL_CLASSES.pop()
+have_youtube_dl = False
+try:
+    import youtube_dl
+    youtube_dl.extractor._ALL_CLASSES.pop()
+    have_youtube_dl = True
+except ModuleNotFoundError:
+    pass
 
 class MediaDevice:
     def __init__(self, device):
@@ -215,6 +221,8 @@ class Info:
             pass
 
     async def youtube_dl(self, url):
+        if not have_youtube_dl:
+            return None
         pool = CancellablePool()
         task = self.loop.create_task(pool.apply(self.extract_info, url))
         try:
@@ -343,6 +351,7 @@ class WebSocketFactory:
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
                 self.log.info('push to play url: %s', url)
+                #TODO: change url if localhost
                 await self.upnp.play(url, data.get('title', 'Video'))
         elif jsondata.get('action') == 'refresh':
             await self.upnp.refresh()
@@ -411,10 +420,12 @@ def main():
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
 
     httpport = 8883
+    # TODO: use argparse
+    save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
 
     http = aiohttp.web.Application(middlewares=[rootindex])
     upnp = UPnPctrl(loop=loop, http=http, httpport=httpport)
-    torrent = torrentstream.TorrentStream(loop=loop, save_path='/opt/tmp/', urlpath='/bt/')
+    torrent = torrentstream.TorrentStream(loop=loop, save_path=save_path, urlpath='/bt/')
     ws = WebSocketFactory(loop=loop, upnp=upnp, torrent=torrent)
     http.on_shutdown.append(ws.onShutdown)
 
@@ -433,7 +444,6 @@ def main():
         pass
     finally:
         upnp.shutdown()
-        torrent.shutdown()
         loop.run_until_complete(http.shutdown())
         loop.run_until_complete(handler.shutdown(60.0))
         loop.close()

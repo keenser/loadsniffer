@@ -9,6 +9,7 @@ torrent to http proxy module
 import mimetypes
 import glob
 import os
+import sys
 import asyncio
 from collections import namedtuple
 import logging
@@ -70,7 +71,7 @@ class DynamicTorrentProducer:
 
     async def stopProducing(self):
         '''stop torrent download'''
-        self.log.info("stopProducing %s", self.fileinfo.info.path)
+        self.log.info("stopProducing %s size: %d", self.fileinfo.info.path, self.size)
         self.stream.remove_alert_handler('read_piece_alert', self._read_piece_alert, self.fileinfo.handle)
         self.stream.remove_alert_handler('piece_finished_alert', self._piece_finished_alert, self.fileinfo.handle)
 
@@ -150,7 +151,6 @@ class StaticTorrentProducer(DynamicTorrentProducer):
             readlen = self.piecelength - self.piece.start
         else:
             readlen = self.lastpiece.start - self.piece.start + 1
-        #print("self.piecelength {}\nself.piece.start {}\nself.lastoffset {}\nself.offset {}\nself.lastpiece.start {}", self.piecelength, self.piece.start, self.lastoffset, self.offset, self.lastpiece.start)
         data = await self.fileObject.read(readlen)
 
         if data:
@@ -211,6 +211,7 @@ class TorrentStream:
 
         self.http = web.Application()
         self.http.router.add_get('/{action:.*}', self.render_GET)
+        self.http.on_shutdown.append(self.shutdown)
 
         self.log.info("libtorrent %s", libtorrent.version)
         self.session = session = libtorrent.session()
@@ -487,9 +488,9 @@ class TorrentStream:
             status[info_hash] = s
         return status
 
-    def shutdown(self):
+    async def shutdown(self, app):
         self.queue_event.set()
-        self.loop.run_until_complete(asyncio.wait([self.queue_loop]))
+        await asyncio.wait([self.queue_loop])
         self.log.info("shutdown done")
 
     async def render_GET(self, request):
@@ -536,10 +537,7 @@ class TorrentStream:
                 stop = ranges.stop or filesize
                 rangestr = 'bytes {}-{}/{}'.format(offset, stop - 1, filesize)
                 size = stop - offset
-                #except:
-                #    rangestr = 'bytes */{}'.format(filesize)
-                #    offset = 0
-                #    size = filesize
+                status = 200 if ranges.start is None and ranges.stop is None else 206
 
                 resume = asyncio.Event()
 
@@ -553,7 +551,7 @@ class TorrentStream:
                         if not resume.is_set():
                             resume.set()
 
-                resp = StreamResponse(status=200,
+                resp = StreamResponse(status=status,
                                       headers={
                                           'accept-ranges': 'bytes',
                                           'Content-Type': mimetype,
@@ -572,9 +570,11 @@ class TorrentStream:
                     while True:
                         resume.clear()
                         await producer.resumeProducing()
-                        await resume.wait()
-                except asyncio.CancelledError:
-                    raise
+                        #await resume.wait()
+                        try:
+                            await asyncio.wait_for(resume.wait(), 5)
+                        except asyncio.TimeoutError:
+                            pass
                 finally:
                     await producer.stopProducing()
 
@@ -584,23 +584,17 @@ class TorrentStream:
 
 def main():
     ''' main loop '''
+    logging.basicConfig(level=logging.DEBUG)
     loop = asyncio.get_event_loop()
 
-    app = web.Application(loop=loop)
+    app = web.Application()
 
-    torrentstream = TorrentStream(save_path='/opt/tmp/aiohttp', loop=loop)
+    save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
+    torrentstream = TorrentStream(save_path=save_path, loop=loop)
+
     app.add_subapp('/bt/', torrentstream.http)
 
-    handler = app.make_handler()
-    server = loop.create_server(handler, None, 9999)
-    loop.run_until_complete(server)
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        print("Shutting Down!")
-        torrentstream.shutdown()
-        loop.run_until_complete(handler.shutdown(60.0))
-        loop.close()
+    web.run_app(app, port=9999)
 
 if __name__ == '__main__':
     main()
