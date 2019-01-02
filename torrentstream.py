@@ -9,6 +9,7 @@ torrent to http proxy module
 import mimetypes
 import glob
 import os
+import sys
 import asyncio
 from collections import namedtuple
 import logging
@@ -588,7 +589,9 @@ def main():
 
     app = web.Application()
 
-    torrentstream = TorrentStream(save_path='/opt/tmp/aiohttp', loop=loop)
+    save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
+    torrentstream = TorrentStream(save_path=save_path, loop=loop)
+
     app.add_subapp('/bt/', torrentstream.http)
 
     web.run_app(app, port=9999)

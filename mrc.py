@@ -8,6 +8,7 @@ import asyncio
 import json
 import urllib.parse
 import os.path
+import sys
 import logging
 import logging.handlers
 import mimetypes
@@ -418,10 +419,12 @@ def main():
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
 
     httpport = 8883
+    # TODO: use argparse
+    save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
 
     http = aiohttp.web.Application(middlewares=[rootindex])
     upnp = UPnPctrl(loop=loop, http=http, httpport=httpport)
-    torrent = torrentstream.TorrentStream(loop=loop, save_path='/opt/tmp/', urlpath='/bt/')
+    torrent = torrentstream.TorrentStream(loop=loop, save_path=save_path, urlpath='/bt/')
     ws = WebSocketFactory(loop=loop, upnp=upnp, torrent=torrent)
     http.on_shutdown.append(ws.onShutdown)
 
