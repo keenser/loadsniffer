@@ -580,7 +580,7 @@ class TorrentStream:
                         except asyncio.TimeoutError:
                             pass
                 except asyncio.CancelledError:
-                '''raise for stopProducing'''
+                    '''raise for stopProducing'''
                     raise
                 finally:
                     await producer.stopProducing()
