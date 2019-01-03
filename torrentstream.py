@@ -77,12 +77,16 @@ class DynamicTorrentProducer:
 
     async def start(self):
         '''start downloading torrent file'''
-        self.stream.add_alert_handler('read_piece_alert', self._read_piece_alert, self.fileinfo.handle)
-        self.stream.add_alert_handler('piece_finished_alert', self._piece_finished_alert, self.fileinfo.handle)
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
         self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
         self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
-        self.log.debug("start %d %d %d", self.piece.piece, self.lastpiece.piece, self.piecelength)
+        self.log.debug("start %d %d %d %d", self.size, self.piece.piece, self.lastpiece.piece, self.piecelength)
+
+        if self.piece.piece > self.lastpiece.piece:
+            raise asyncio.CancelledError
+
+        self.stream.add_alert_handler('read_piece_alert', self._read_piece_alert, self.fileinfo.handle)
+        self.stream.add_alert_handler('piece_finished_alert', self._piece_finished_alert, self.fileinfo.handle)
 
         # priority window size 4Mb * 8
         priorityblock = int((4 * 1024 * 1024) / self.piecelength)
@@ -172,7 +176,7 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
     async def resumeProducing(self):
         '''continue torrent download iteration'''
-        self.log.debug("index %d", self.piece.piece)
+        self.log.debug("index %d %d", self.size, self.piece.piece)
         if self.fileinfo.handle.have_piece(self.piece.piece):
             await self._read_piece()
 
