@@ -529,7 +529,7 @@ class TorrentStream:
                 ret = help()
             else:
                 fileForReading = self._files_list[action]
-                mimetype, _ = mimetypes.guess_type(action, strict=False)
+                mimetype = mimetypes.guess_type(action, strict=False)[0] or 'application/octet-stream'
                 filesize = fileForReading.info.size
 
                 ranges = request.http_range

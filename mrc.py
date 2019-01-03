@@ -289,7 +289,12 @@ class WebSocketFactory:
 
     @staticmethod
     def videofiles(files):
-        return [i for i in files if mimetypes.guess_type(i, strict=False)[0].startswith('video')]
+        ret = []
+        for i in files:
+            mime = mimetypes.guess_type(i, strict=False)[0]
+            if mime and mime.startswith('video'):
+                ret.append(i)
+        return ret
 
     def btfileslist(self, infiles):
         response = []
