@@ -81,12 +81,15 @@ class UPnPctrl:
         await service.subscribe('CurrentTrackMetaData', self.state_variable_change)
         await service.subscribe('TransportState', self.state_variable_change)
 
-    async def play(self, url, title='Video', vtype='video/mp4'):
+    async def play(self, url, title='Video', relative=False):
         if self.device:
+            if relative:
+                self.log.debug('local: %s url: %s', self.device.media.localhost, url)
+                url = urllib.parse.urljoin(self.device.media.localhost, url)
             try:
                 async with aiohttp.ClientSession(read_timeout=5) as session:
                     async with session.head(url) as response:
-                        ctype = response.headers.get('content-type', vtype)
+                        ctype = response.headers.get('content-type', 'video/mp4')
                         service = self.device.media.service('AVTransport')
                         try:
                             await service.stop()
@@ -108,7 +111,7 @@ class UPnPctrl:
     def state_variable_change(self, variable):
         usn = variable.service.device.usn
         if variable.name == 'CurrentTrackMetaData':
-            self.log.info('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
+            self.log.debug('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
             if variable.value is not None and variable.value:
                 try:
                     elt = aioupnp.dlna.didl.fromString(variable.value)
@@ -306,7 +309,8 @@ class WebSocketFactory:
                 'title': os.path.basename(i),
                 'url':
                     urllib.parse.urljoin(
-                        urllib.parse.urlunsplit(['http', self.local, self.torrent.options.get('urlpath'), None, None]),
+                        #urllib.parse.urlunsplit(['http', self.local, self.torrent.options.get('urlpath'), None, None]),
+                        self.torrent.options.get('urlpath'),
                         urllib.parse.quote(i)
                     )
                 } for i in self.videofiles(handle['files'])]
@@ -355,9 +359,8 @@ class WebSocketFactory:
                     #TODO
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
-                self.log.info('push to play url: %s', url)
-                #TODO: change url if localhost
-                await self.upnp.play(url, data.get('title', 'Video'))
+                self.log.info('push to play relative %s, url: %s', data.get('relative'), url)
+                await self.upnp.play(url, data.get('title', 'Video'), data.get('relative', False))
         elif jsondata.get('action') == 'refresh':
             await self.upnp.refresh()
         elif jsondata.get('action') == 'search':

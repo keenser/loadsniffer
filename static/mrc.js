@@ -2,14 +2,14 @@ function urlcfg(callback) {
     let urllocation = window.location.href;
     if ( urllocation.startsWith("chrome-extension") ) {
         chrome.storage.sync.get({
-            mrcserver: 'ws://localhost:8883/ws'
+            mrcserver: 'http://localhost:8883'
         }, function(items) {
             callback(items.mrcserver);
         });
     }
     else {
-        let mrcurl = urllocation.match(/:\/\/([^\/]+)/i);
-        callback("ws://" + mrcurl[1] + "/ws");
+        let mrcurl = urllocation.match(/(.+:\/\/[^\/]+)/i);
+        callback(mrcurl[1]);
     }
 }
 
@@ -28,8 +28,9 @@ function MRCServer(url, handler) {
     mrc.connect = function(opencallback, closecallback) {
         doclose = false;
         mrc.url(function(url) {
-        console.log("url", url);
-        websocket = new WebSocket(url);
+        let wsurl = url.match(/.*:\/\/([^\/]+)/i);
+        console.log("wsurl", wsurl[1]);
+        websocket = new WebSocket("ws://" + wsurl[1] + "/ws");
         websocket.binaryType = "arraybuffer";
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
@@ -100,10 +101,18 @@ var copyToClipboard = function (str) {
     }
     document.execCommand("Copy", false, null );
 }
-var addSingleLink = function(line, textcontent, url, title, cookie) {
+var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
     let span = document.createElement("span");
+    let relativeurl = url;
+    let relative = false;
+
+    if (localurl) {
+        relative = true;
+        relativeurl = localurl + url;
+    }
+
     span.textContent = textcontent;
-    span.title = url;
+    span.title = relativeurl;
     span.addEventListener('click', function(e) {
 	if (sendMessage !== undefined) {
             sendMessage({
@@ -111,21 +120,22 @@ var addSingleLink = function(line, textcontent, url, title, cookie) {
                 request: {
                     title: title,
                     cookie: cookie,
-                    url: url
+                    url: url,
+                    relative: relative
                 }
             });
 	}
-        copyToClipboard(url);
+        copyToClipboard(relativeurl);
     });
     line.appendChild(span);
 }
 var addLine = function(container, linkSource) {
     let line = document.createElement("div");
     let textcontent = linkSource.src + ': ' + linkSource.title || linkSource.url;
-    addSingleLink(line, textcontent, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie);
+    addSingleLink(line, textcontent, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie, null);
     if (linkSource.bitrate !== undefined) {
         for (let i = 0; i < linkSource.bitrate.length; i++) {
-            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie);
+            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie, null);
         }
     }
     container.insertBefore(line, container.firstChild);
@@ -151,6 +161,7 @@ var UpdateUPNPStatus = function(data) {
     container.textContent = text;
 }
 var UpdateBTStatus = function(data) {
+    urlcfg(function(localurl) {
     let container = document.getElementById("bt");
     container.textContent = '';
     for (let i = 0; i < data.length; i++) {
@@ -176,7 +187,7 @@ var UpdateBTStatus = function(data) {
 
         let files = document.createElement("div");
         for (let f = 0; f < data[i].files.length; f++) {
-            addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null);
+            addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null, localurl);
         }
         files.className = 'active';
         title.addEventListener('click',
@@ -194,4 +205,5 @@ var UpdateBTStatus = function(data) {
         torrent.appendChild(files);
         container.appendChild(torrent);
     }
+    });
 }

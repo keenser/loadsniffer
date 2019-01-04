@@ -154,6 +154,7 @@ class UPNPServer:
                     text = await resp.text()
                     xml = xmltodict.parse(text, dict_constructor=dict, force_list=('device', 'service'))
                     device = xml['root']['device'][0]
+                    #TODO: format localhost url
                     device['localhost'] = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
                     return device
         except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
