@@ -50,7 +50,7 @@ class UPnPctrl:
         self.aioupnp.shutdown()
 
     async def media_renderer_removed(self, device=None):
-        self.log.info('media_renderer_removed %s', device)
+        self.log.info('media renderer removed %s %s', device.usn, device.friendlyName)
         self.mediadevices.pop(device.usn, None)
         if self.device:
             if self.device.media.usn == device.usn:
@@ -426,6 +426,7 @@ def main():
     logging.getLogger('TorrentProducer').setLevel(logging.INFO)
     logging.getLogger('TorrentStream').setLevel(logging.INFO)
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
+    logging.getLogger('aiohttp.access').setlevel(logging.WARN)
 
     httpport = 8883
     # TODO: use argparse
