@@ -116,7 +116,7 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
     span.addEventListener('click', function(e) {
 	if (sendMessage !== undefined) {
             sendMessage({
-                action: "play",
+                action: "transporturi",
                 request: {
                     title: title,
                     cookie: cookie,
@@ -148,8 +148,10 @@ var addLinks = function(videoLinks) {
 }
 var UpdateUPNPStatus = function(data) {
     let container = document.getElementById("upnp");
-    let text = '';
+    container.textContent = '';
     if (data) {
+        let text = '';
+        let stat = document.createElement("span");
         text = data.device;
         if (data.state) {
             text = text + '[' + data.state + ']';
@@ -157,8 +159,61 @@ var UpdateUPNPStatus = function(data) {
         if (data.item.length > 0) {
             text = text + ": " + data.item[0].title;
         }
+        stat.textContent = text;
+
+        let play = document.createElement("span");
+        play.textContent = '►';
+        play.title = 'play';
+        play.addEventListener('click',
+        function(e) {
+            if(sendMessage !== undefined) {
+                sendMessage({
+                    action: "play"
+                });
+            }
+        });
+
+        let refresh = document.createElement("span");
+        refresh.textContent = '⟳';
+        refresh.title = 'refresh';
+        refresh.addEventListener('click',
+        function(e) {
+            if(sendMessage !== undefined) {
+                sendMessage({
+                    action: "refresh"
+                });
+            }
+        });
+
+        let pause = document.createElement("span");
+        pause.textContent = '❙❙';
+        pause.title = 'pause';
+        pause.addEventListener('click',
+        function(e) {
+            if(sendMessage !== undefined) {
+                sendMessage({
+                    action: "pause"
+                });
+            }
+        });
+
+        let stop = document.createElement("span");
+        stop.textContent = '◼';
+        stop.title = 'stop';
+        stop.addEventListener('click',
+        function(e) {
+            if(sendMessage !== undefined) {
+                sendMessage({
+                    action: "stop"
+                });
+            }
+        });
+        container.appendChild(refresh);
+        container.appendChild(play);
+        container.appendChild(pause);
+        container.appendChild(stop);
+        container.appendChild(stat);
     }
-    container.textContent = text;
 }
 
 var bthiddenlist = {}

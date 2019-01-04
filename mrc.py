@@ -81,7 +81,7 @@ class UPnPctrl:
         await service.subscribe('CurrentTrackMetaData', self.state_variable_change)
         await service.subscribe('TransportState', self.state_variable_change)
 
-    async def play(self, url, title='Video', relative=False):
+    async def transporturi(self, url, title='Video', relative=False):
         if self.device:
             if relative:
                 self.log.debug('local: %s url: %s', self.device.media.localhost, url)
@@ -98,8 +98,32 @@ class UPnPctrl:
                         await service.transporturi(url, title, ctype)
                         await service.play()
             except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
-                self.log.warning('play %s', err)
+                self.log.warning('transporturi %s', err)
                 return
+
+    async def play(self):
+        if self.device:
+            try:
+                service = self.device.media.service('AVTransport')
+                await service.play()
+            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                self.log.warning('play %s', err)
+
+    async def pause(self):
+        if self.device:
+            try:
+                service = self.device.media.service('AVTransport')
+                await service.pause()
+            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                self.log.warning('pause %s', err)
+
+    async def stop(self):
+        if self.device:
+            try:
+                service = self.device.media.service('AVTransport')
+                await service.stop()
+            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                self.log.warning('stop %s', err)
 
     def add_alert_handler(self, callback):
         self.registered_callbacks[id(callback)] = {'status': None, 'callback': callback}
@@ -351,7 +375,7 @@ class WebSocketFactory:
 
     async def onMessage(self, payload):
         jsondata = json.loads(payload)
-        if jsondata.get('action') == 'play':
+        if jsondata.get('action') == 'transporturi':
             data = jsondata.pop('request', {})
             url = data.get('url')
             if url:
@@ -360,7 +384,13 @@ class WebSocketFactory:
                     print("cookie", data.get('cookie'))
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
                 self.log.info('push to play relative %s, url: %s', data.get('relative'), url)
-                await self.upnp.play(url, data.get('title', 'Video'), data.get('relative', False))
+                await self.upnp.transporturi(url, data.get('title', 'Video'), data.get('relative', False))
+        elif jsondata.get('action') == 'play':
+            await self.upnp.play()
+        elif jsondata.get('action') == 'pause':
+            await self.upnp.pause()
+        elif jsondata.get('action') == 'stop':
+            await self.upnp.stop()
         elif jsondata.get('action') == 'refresh':
             await self.upnp.refresh()
         elif jsondata.get('action') == 'search':
@@ -421,6 +451,7 @@ def main():
 
     loop.set_exception_handler(exception_handler)
 
+    logging.getLogger('UPnPctrl').setLevel(logging.INFO)
     logging.getLogger('SSDPServer').setLevel(logging.WARN)
     logging.getLogger('EventsServer').setLevel(logging.INFO)
     logging.getLogger('TorrentProducer').setLevel(logging.INFO)
