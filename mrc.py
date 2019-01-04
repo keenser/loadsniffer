@@ -426,7 +426,7 @@ def main():
     logging.getLogger('TorrentProducer').setLevel(logging.INFO)
     logging.getLogger('TorrentStream').setLevel(logging.INFO)
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
-    logging.getLogger('aiohttp.access').setlevel(logging.WARN)
+    logging.getLogger('aiohttp.access').setLevel(logging.WARN)
 
     httpport = 8883
     # TODO: use argparse
