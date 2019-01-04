@@ -160,8 +160,12 @@ var UpdateUPNPStatus = function(data) {
     }
     container.textContent = text;
 }
+
+var bthiddenlist = {}
+
 var UpdateBTStatus = function(data) {
     urlcfg(function(localurl) {
+    let hiddenlist = {}
     let container = document.getElementById("bt");
     container.textContent = '';
     for (let i = 0; i < data.length; i++) {
@@ -189,14 +193,23 @@ var UpdateBTStatus = function(data) {
         for (let f = 0; f < data[i].files.length; f++) {
             addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null, localurl);
         }
-        files.className = 'active';
+        if (bthiddenlist[data[i].info_hash] !== undefined) {
+            files.className = bthiddenlist[data[i].info_hash];
+            hiddenlist[data[i].info_hash] = bthiddenlist[data[i].info_hash];
+        }
+        else {
+            files.className = 'hided';
+            hiddenlist[data[i].info_hash] = 'hided';
+        }
         title.addEventListener('click',
         function(e) {
             if (files.className === 'hided') {
                 files.className = 'active';
+                bthiddenlist[data[i].info_hash] = 'active';
             }
             else {
                 files.className = 'hided';
+                bthiddenlist[data[i].info_hash] = 'hided';
             }
         });
         let torrent = document.createElement("div");
@@ -205,5 +218,6 @@ var UpdateBTStatus = function(data) {
         torrent.appendChild(files);
         container.appendChild(torrent);
     }
+    bthiddenlist = hiddenlist;
     });
 }
