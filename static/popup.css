@@ -106,7 +106,12 @@ span {
     overflow: hidden;
 }
 
+.control {
+    overflow: hidden;
+}
 .control span {
     padding-left: 5px;
     padding-right: 5px;
+    overflow: hidden;
+    white-space: nowrap;
 }
