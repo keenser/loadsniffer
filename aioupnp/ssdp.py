@@ -199,20 +199,23 @@ class SSDPServer:
         self.log.debug('Discovery request from %s:%d for %s', host, port, headers.get('st'))
         #self.log.info('Discovery request for %s', headers.get('st'))
 
+    def MSearch(self):
+        req = ['M-SEARCH * HTTP/1.1',
+               'HOST: %s:%d' % (SSDP_ADDR, SSDP_PORT),
+               'MAN: "ssdp:discover"',
+               'MX: 5',
+               'ST: ssdp:all',
+               'USER-AGENT: {}/{}'.format(__name__, version),
+               '', '']
+        req = '\r\n'.join(req)
+
+        try:
+            self.transport.sendto(req.encode(), (SSDP_ADDR, SSDP_PORT))
+        except (socket.error) as msg:
+            self.log.info("failure sending out the discovery message: %r", msg)
+
     async def resendMSearch(self):
         while True:
-            req = ['M-SEARCH * HTTP/1.1',
-                   'HOST: %s:%d' % (SSDP_ADDR, SSDP_PORT),
-                   'MAN: "ssdp:discover"',
-                   'MX: 5',
-                   'ST: ssdp:all',
-                   'USER-AGENT: {}/{}'.format(__name__, version),
-                   '', '']
-            req = '\r\n'.join(req)
-
-            try:
-                self.transport.sendto(req.encode(), (SSDP_ADDR, SSDP_PORT))
-            except (socket.error) as msg:
-                self.log.info("failure sending out the discovery message: %r", msg)
+            self.MSearch()
             await asyncio.sleep(120)
 

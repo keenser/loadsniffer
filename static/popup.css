@@ -105,3 +105,8 @@ span {
     transition: opacity .3s, max-height .3s;
     overflow: hidden;
 }
+
+.control span {
+    padding-left: 5px;
+    padding-right: 5px;
+}

@@ -168,8 +168,8 @@ class UPnPctrl:
             except Exception as exeption:
                 self.log.error('trigger_callbacks exception %s', exeption)
 
-    async def refresh(self):
-        await self.aioupnp.ssdp.resendMSearch()
+    def refresh(self):
+        self.aioupnp.ssdp.MSearch()
 
 
 class CancellablePool:
@@ -375,6 +375,7 @@ class WebSocketFactory:
 
     async def onMessage(self, payload):
         jsondata = json.loads(payload)
+        self.log.debug('onMessage action: %s', jsondata.get('action'))
         if jsondata.get('action') == 'transporturi':
             data = jsondata.pop('request', {})
             url = data.get('url')
@@ -392,7 +393,7 @@ class WebSocketFactory:
         elif jsondata.get('action') == 'stop':
             await self.upnp.stop()
         elif jsondata.get('action') == 'refresh':
-            await self.upnp.refresh()
+            self.upnp.refresh()
         elif jsondata.get('action') == 'search':
             data = jsondata.pop('request', {})
             url = data.get('url')

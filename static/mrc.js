@@ -149,6 +149,21 @@ var addLinks = function(videoLinks) {
 var UpdateUPNPStatus = function(data) {
     let container = document.getElementById("upnp");
     container.textContent = '';
+
+    let refresh = document.createElement("span");
+    refresh.textContent = '⟳';
+    refresh.title = 'refresh';
+    refresh.addEventListener('click',
+    function(e) {
+        if(sendMessage !== undefined) {
+            sendMessage({
+                action: "refresh"
+            });
+        }
+    });
+
+    container.appendChild(refresh);
+
     if (data) {
         let text = '';
         let stat = document.createElement("span");
@@ -169,18 +184,6 @@ var UpdateUPNPStatus = function(data) {
             if(sendMessage !== undefined) {
                 sendMessage({
                     action: "play"
-                });
-            }
-        });
-
-        let refresh = document.createElement("span");
-        refresh.textContent = '⟳';
-        refresh.title = 'refresh';
-        refresh.addEventListener('click',
-        function(e) {
-            if(sendMessage !== undefined) {
-                sendMessage({
-                    action: "refresh"
                 });
             }
         });
@@ -208,7 +211,6 @@ var UpdateUPNPStatus = function(data) {
                 });
             }
         });
-        container.appendChild(refresh);
         container.appendChild(play);
         container.appendChild(pause);
         container.appendChild(stop);
