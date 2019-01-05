@@ -444,7 +444,7 @@ async def rootindex(app, handler):
     return index_handler
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
     loop = asyncio.get_event_loop()
 
     def exception_handler(loop, context):
