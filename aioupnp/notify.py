@@ -9,7 +9,7 @@ class AioDispatcher:
     '''simple asyncio send/notify module'''
 
     def __init__(self, loop=None):
-        self.loop = asyncio.get_event_loop() if loop is None else loop
+        self.loop = loop or asyncio.get_event_loop()
         self._pool = {}
 
     def connect(self, signal, callback):

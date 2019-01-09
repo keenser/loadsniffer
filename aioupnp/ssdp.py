@@ -129,7 +129,7 @@ class SSDPMcastProtocol(SSDPProtocol):
 class SSDPServer:
     def __init__(self, loop=None):
         self.log = logging.getLogger(self.__class__.__name__)
-        self.loop = asyncio.get_event_loop() if loop is None else loop
+        self.loop = loop or asyncio.get_event_loop()
         self.devices = {}
         self.resend_notify_loop = None
         self.resend_mseatch_loop = None
