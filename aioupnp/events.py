@@ -32,9 +32,9 @@ class Event:
         return '{}[{}]'.format(self.name, self.value)
 
 class EventsServer:
-    def __init__(self, loop=None, http=None):
+    def __init__(self, loop, http):
         self.log = logging.getLogger(self.__class__.__name__)
-        self.loop = asyncio.get_event_loop() if loop is None else loop
+        self.loop = loop
 
         self.events = {}
         self.sidtoservice = {}
