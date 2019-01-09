@@ -116,7 +116,7 @@ class UPNPServer:
     def __init__(self, loop=None, http=None, httpport=0):
         self.log = logging.getLogger(self.__class__.__name__)
         self.loop = loop or asyncio.get_event_loop()
-        self.http = http or aiohttp.web.Application()
+        self.http = aiohttp.web.Application() if http is None else http #can't use 'http or Application()'
         self.httpport = httpport
         self.handler = None
         self.httpserver = None
