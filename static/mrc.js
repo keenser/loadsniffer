@@ -1,15 +1,14 @@
 function urlcfg(callback) {
-    let urllocation = window.location.href;
-    if ( urllocation.startsWith("chrome-extension") ) {
+    let urllocation = window.location;
+    if ( urllocation.protocol == "chrome-extension:" ) {
         chrome.storage.sync.get({
             mrcserver: 'http://localhost:8883'
         }, function(items) {
-            callback(items.mrcserver);
+            callback(new URL(items.mrcserver));
         });
     }
     else {
-        let mrcurl = urllocation.match(/(.+:\/\/[^\/]+)/i);
-        callback(mrcurl[1]);
+        callback(urllocation);
     }
 }
 
@@ -28,9 +27,10 @@ function MRCServer(url, handler) {
     mrc.connect = function(opencallback, closecallback) {
         doclose = false;
         mrc.url(function(url) {
-        let wsurl = url.match(/.*:\/\/([^\/]+)/i);
-        console.log("wsurl", wsurl[1]);
-        websocket = new WebSocket("ws://" + wsurl[1] + "/ws");
+        wsurl = new URL('/ws', url);
+        wsurl.protocol = 'ws:';
+        console.log('wsurl', wsurl);
+        websocket = new WebSocket(wsurl);
         websocket.binaryType = "arraybuffer";
         websocket.onopen = opencallback;
         websocket.onclose = function(evt) {
@@ -108,7 +108,7 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
 
     if (localurl) {
         relative = true;
-        relativeurl = localurl + url;
+        relativeurl = new URL(url, localurl);
     }
 
     span.textContent = textcontent;
