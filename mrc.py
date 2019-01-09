@@ -46,9 +46,6 @@ class UPnPctrl:
         self.device = None
         self.registered_callbacks = {}
 
-    async def shutdown(self, app=None):
-        await self.aioupnp.shutdown()
-
     async def media_renderer_removed(self, device=None):
         self.log.info('media renderer removed %s %s', device.usn, device.friendlyName)
         self.mediadevices.pop(device.usn, None)

@@ -135,7 +135,7 @@ class UPNPServer:
             self.httpserver = self.loop.run_until_complete(self.loop.create_server(self.handler, '0.0.0.0', httpport))
             self.httpport = self.httpserver.sockets[0].getsockname()[1]
 
-    async def shutdown(self):
+    async def shutdown(self, app=None):
         await self.ssdp.shutdown()
 
         if self.httpserver:
@@ -143,9 +143,9 @@ class UPNPServer:
             await self.httpserver.wait_closed()
 
         if self.handler:
-            self.loop.run_until_complete(self.http.shutdown())
-            self.loop.run_until_complete(self.handler.shutdown(60.0))
-            self.loop.run_until_complete(self.http.cleanup())
+            await self.http.shutdown()
+            await self.handler.shutdown(60.0)
+            await self.http.cleanup()
 
 
     async def parse_description(self, url):
