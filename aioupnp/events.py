@@ -7,10 +7,12 @@ import asyncio
 import logging
 import aiohttp
 import aiohttp.web
+from typing import Type, Awaitable, Callable, Dict
 import urllib.parse
 import xmltodict
 import time
 from . import notify
+from . import dlna
 
 class Event:
     def __init__(self, name):
@@ -64,10 +66,10 @@ class EventsServer:
                     notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
         return aiohttp.web.Response()
 
-    async def subscribe(self, service, callback):
+    async def subscribe(self, service: Type[dlna.DLNAService], callback: Awaitable[Callable[[Dict[str, Event]],None]]):
         self.running_tasks[service.uid] = self.loop.create_task(self.event_task(service, callback))
 
-    async def unsubscribe(self, service):
+    async def unsubscribe(self, service: Type[dlna.DLNAService]):
         task = self.running_tasks.pop(service.uid)
         if task:
             try:
