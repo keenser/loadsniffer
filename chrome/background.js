@@ -316,7 +316,7 @@ chrome.extension.onMessage.addListener(function(message, sender, f_callback) {
             btlib: btlib,
             upnpstatus: upnpstatus
         });
-    } else if (message.request !== undefined) {
+    } else if (message.action !== undefined) {
         console.log(message.action, message);
         mrc.sendMessage(message);
     }
