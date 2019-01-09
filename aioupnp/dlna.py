@@ -148,8 +148,13 @@ class AVTransport(DLNAService):
     async def setplaymode(self, mode):
         return await self.action('SetPlayMode').call(InstanceID=0, NewPlayMode=mode)
 
-    async def transporturi(self, url, title, mime):
+    async def setavtransporturi(self, url, title, mime):
         dlnatags = 'http-get:*:{}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'.format(mime)
         metadata = didl.DIDLElement(didl.VideoItem(None, None, 0, title, didl.Resource(dlnatags, url)))
         return await self.action('SetAVTransportURI').call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString(metadata))
+
+    async def setnextavtransporturi(self, url, title, mime):
+        dlnatags = 'http-get:*:{}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'.format(mime)
+        metadata = didl.DIDLElement(didl.VideoItem(None, None, 0, title, didl.Resource(dlnatags, url)))
+        return await self.action('SetNextAVTransportURI').call(InstanceID=0, NextURI=url, NextURIMetaData=didl.toString(metadata))
 

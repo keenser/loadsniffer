@@ -122,6 +122,7 @@ class UPNPServer:
         self.httpserver = None
         self.devices = {}
 
+        self.http.on_shutdown.append(self.shutdown)
         notify.connect('UPnP.SSDP.new_device', self.create_device)
         notify.connect('UPnP.SSDP.removed_device', self.remove_device)
         notify.connect('UPnP.SSDP.update_device', self.update_device)
@@ -134,12 +135,12 @@ class UPNPServer:
             self.httpserver = self.loop.run_until_complete(self.loop.create_server(self.handler, '0.0.0.0', httpport))
             self.httpport = self.httpserver.sockets[0].getsockname()[1]
 
-    def shutdown(self):
-        self.ssdp.shutdown()
+    async def shutdown(self):
+        await self.ssdp.shutdown()
 
         if self.httpserver:
             self.httpserver.close()
-            self.loop.run_until_complete(self.httpserver.wait_closed())
+            await self.httpserver.wait_closed()
 
         if self.handler:
             self.loop.run_until_complete(self.http.shutdown())

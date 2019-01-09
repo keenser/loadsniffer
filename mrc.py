@@ -46,8 +46,8 @@ class UPnPctrl:
         self.device = None
         self.registered_callbacks = {}
 
-    def shutdown(self, app=None):
-        self.aioupnp.shutdown()
+    async def shutdown(self, app=None):
+        await self.aioupnp.shutdown()
 
     async def media_renderer_removed(self, device=None):
         self.log.info('media renderer removed %s %s', device.usn, device.friendlyName)
@@ -95,7 +95,7 @@ class UPnPctrl:
                             await service.stop()
                         except aiohttp.client_exceptions.ClientError:
                             pass
-                        await service.transporturi(url, title, ctype)
+                        await service.setavtransporturi(url, title, ctype)
                         await service.play()
             except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
                 self.log.warning('transporturi %s', err)
@@ -469,7 +469,6 @@ def main():
     torrent = torrentstream.TorrentStream(loop=loop, save_path=save_path, urlpath='/bt/')
     ws = WebSocketFactory(loop=loop, upnp=upnp, torrent=torrent)
     http.on_shutdown.append(ws.onShutdown)
-    http.on_shutdown.append(upnp.shutdown)
 
     http.add_subapp(torrent.options['urlpath'], torrent.http)
     http.router.add_get('/ws', ws.websocket_handler)

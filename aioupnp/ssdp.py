@@ -148,12 +148,12 @@ class SSDPServer:
         self.resend_mseatch_loop = self.loop.create_task(self.resendMSearch())
         return self
 
-    def shutdown(self):
+    async def shutdown(self):
         for key in list(self.devices):
             self.unRegister(key)
         self.resend_mseatch_loop.cancel()
         try:
-            self.loop.run_until_complete(self.resend_mseatch_loop)
+            await self.resend_mseatch_loop
         except asyncio.CancelledError:
             pass
 
