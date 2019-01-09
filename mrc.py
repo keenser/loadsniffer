@@ -473,7 +473,19 @@ def main():
 
     logging.info('listening aiohttp server %s on port %d', aiohttp.__version__, httpport)
 
-    aiohttp.web.run_app(http, port=8883, reuse_port=True)
+    handler = http.make_handler()
+    server = loop.create_server(handler, None, httpport, reuse_port=True)
+    server = loop.run_until_complete(server)
+
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.run_until_complete(http.shutdown())
+        loop.run_until_complete(handler.shutdown(60.0))
+        loop.close()
+    #aiohttp.web.run_app(http, port=8883, reuse_port=True)
 
     #site.socket.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
 
