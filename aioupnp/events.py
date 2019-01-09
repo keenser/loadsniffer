@@ -46,7 +46,7 @@ class EventsServer:
         if request.has_body:
             body = await request.text()
             service = self.sidtoservice.get(request.headers.get('SID'))
-            self.log.warn('event %s %s', request.headers.get('SID'), service)
+            self.log.debug('event %s %s', request.headers.get('SID'), service)
             if service:
                 events = self.events.setdefault(service.uid, {})
 

@@ -46,7 +46,7 @@ class UPnPctrl:
         self.device = None
         self.registered_callbacks = {}
 
-    def shutdown(self):
+    def shutdown(self, app=None):
         self.aioupnp.shutdown()
 
     async def media_renderer_removed(self, device=None):
@@ -357,7 +357,7 @@ class WebSocketFactory:
         self.torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self):
-        self.log.info('WS client closed %s %s with exception: %s', self.peer, self.local, self.ws.exception())
+        self.log.info('WS client closed %s %s', self.peer, self.local)
         self.factory.wsclients.discard(self)
         if self._upnpupdate:
             self.upnp.remove_alert_handler(self._upnpupdate)
@@ -469,25 +469,15 @@ def main():
     torrent = torrentstream.TorrentStream(loop=loop, save_path=save_path, urlpath='/bt/')
     ws = WebSocketFactory(loop=loop, upnp=upnp, torrent=torrent)
     http.on_shutdown.append(ws.onShutdown)
+    http.on_shutdown.append(upnp.shutdown)
 
     http.add_subapp(torrent.options['urlpath'], torrent.http)
     http.router.add_get('/ws', ws.websocket_handler)
     http.router.add_static('/', 'static')
 
     logging.info('listening aiohttp server %s on port %d', aiohttp.__version__, httpport)
-    handler = http.make_handler()
-    server = loop.create_server(handler, None, httpport)
-    server = loop.run_until_complete(server)
 
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        upnp.shutdown()
-        loop.run_until_complete(http.shutdown())
-        loop.run_until_complete(handler.shutdown(60.0))
-        loop.close()
+    aiohttp.web.run_app(http, port=8883, reuse_port=True)
 
     #site.socket.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
 

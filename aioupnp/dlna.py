@@ -145,6 +145,9 @@ class AVTransport(DLNAService):
     async def pause(self):
         return await self.action('Pause').call(InstanceID=0)
 
+    async def setplaymode(self, mode):
+        return await self.action('SetPlayMode').call(InstanceID=0, NewPlayMode=mode)
+
     async def transporturi(self, url, title, mime):
         dlnatags = 'http-get:*:{}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'.format(mime)
         metadata = didl.DIDLElement(didl.VideoItem(None, None, 0, title, didl.Resource(dlnatags, url)))
