@@ -13,6 +13,7 @@ from . import version
 SSDP_PORT = 1900
 SSDP_ADDR = '239.255.255.250'
 
+
 class SSDPDevice(dict):
     def __init__(self, server, data={}):
         super().__init__(data)
@@ -146,7 +147,7 @@ class SSDPServer:
         )
         self.transport, self.ucastprotocol = self.loop.run_until_complete(ucast)
 
-        self.resend_mseatch_loop = self.loop.create_task(self.resendMSearch())
+        self.resend_mseatch_loop = self.loop.create_task(self._resendMSearch())
 
     async def shutdown(self):
         for key in list(self.devices):
@@ -214,7 +215,7 @@ class SSDPServer:
         except (socket.error) as msg:
             self.log.info("failure sending out the discovery message: %r", msg)
 
-    async def resendMSearch(self):
+    async def _resendMSearch(self):
         while True:
             self.MSearch()
             await asyncio.sleep(120)
