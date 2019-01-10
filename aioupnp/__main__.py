@@ -9,6 +9,7 @@ import aiohttp.web
 from . import notify
 from . import upnp
 
+
 def main():
     logging.basicConfig(level=logging.WARN)
     loop = asyncio.get_event_loop()
@@ -43,6 +44,7 @@ def main():
         loop.run_until_complete(handler.shutdown(60.0))
         #loop.run_until_complete(app.cleanup())
         loop.close()
+
 
 if __name__ == '__main__':
     main()

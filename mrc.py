@@ -26,6 +26,7 @@ try:
 except ModuleNotFoundError:
     pass
 
+
 class MediaDevice:
     def __init__(self, device):
         self.media = device
@@ -33,6 +34,7 @@ class MediaDevice:
 
     def __repr__(self):
         return "{} {}".format(self.media, self.status)
+
 
 class UPnPctrl:
     def __init__(self, loop=None, http=None, httpport=0):
@@ -256,6 +258,7 @@ class Info:
         finally:
             pool.shutdown()
 
+
 class WebSocketFactory:
     def __init__(self, loop=None, factory=None, upnp=None, torrent=None, peer=None, local=None, ws=None):
         self.log = logging.getLogger(self.__class__.__name__)
@@ -330,7 +333,6 @@ class WebSocketFactory:
                 'title': os.path.basename(i),
                 'url':
                     urllib.parse.urljoin(
-                        #urllib.parse.urlunsplit(['http', self.local, self.torrent.options.get('urlpath'), None, None]),
                         self.torrent.options.get('urlpath'),
                         urllib.parse.quote(i)
                     )
@@ -401,17 +403,21 @@ class WebSocketFactory:
             data = jsondata.pop('request', {})
             url = data.get('url')
             self.log.info('add %s', url)
+
             async def bittorrent():
                 def remove_handlers():
                     self.torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
                     self.torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
+
                 async def torrent_error_alert(alert):
                     self.log.info('torrent_error_alert %s', jsondata)
                     await self.sendMessage(None, jsondata)
                     remove_handlers()
+
                 async def tracker_announce_alert(alert):
                     await self.sendMessage('done', jsondata)
                     remove_handlers()
+
                 if self.torrent.add_torrent(url):
                     self.torrent.add_alert_handler('torrent_error_alert', torrent_error_alert)
                     self.torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
@@ -433,12 +439,14 @@ class WebSocketFactory:
             message = self.upnp.device.status if self.upnp.device else None
             await self.sendMessage(message, jsondata)
 
+
 async def rootindex(app, handler):
     async def index_handler(request):
         if request.path == '/':
             request.match_info['filename'] = 'index.html'
         return await handler(request)
     return index_handler
+
 
 def main():
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
@@ -488,6 +496,7 @@ def main():
     #aiohttp.web.run_app(http, port=8883, reuse_port=True)
 
     #site.socket.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
+
 
 if __name__ == '__main__':
     main()

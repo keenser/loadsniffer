@@ -7,12 +7,14 @@ import asyncio
 import logging
 import aiohttp
 import aiohttp.web
+import aiohttp.client_exceptions
 from typing import Type, Awaitable, Callable, Dict
 import urllib.parse
 import xmltodict
 import time
 from . import notify
 from . import dlna
+
 
 class Event:
     def __init__(self, name):
@@ -30,6 +32,7 @@ class Event:
 
     def __repr__(self):
         return '{}[{}]'.format(self.name, self.value)
+
 
 class EventsServer:
     def __init__(self, loop, http):
@@ -66,7 +69,7 @@ class EventsServer:
                     notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
         return aiohttp.web.Response()
 
-    async def subscribe(self, service: Type[dlna.DLNAService], callback: Awaitable[Callable[[Dict[str, Event]],None]]):
+    async def subscribe(self, service: Type[dlna.DLNAService], callback: Awaitable[Callable[[Dict[str, Event]], None]]):
         self.running_tasks[service.uid] = self.loop.create_task(self.event_task(service, callback))
 
     async def unsubscribe(self, service: Type[dlna.DLNAService]):
@@ -79,39 +82,34 @@ class EventsServer:
                 except asyncio.CancelledError:
                     pass
 
-    #async def shutdown(self):
-    #    for task in list(self.running_tasks.keys()):
-    #        await self.unsubscribe(self.running_tasks[task])
-
     async def event_task(self, service, callback):
         while True:
             try:
                 sid = None
-                timeout = None
-                async with aiohttp.ClientSession(read_timeout = 5, raise_for_status=True) as session:
+                async with aiohttp.ClientSession(read_timeout=5, raise_for_status=True) as session:
                     try:
                         self.log.info('event_task %s callback %s', service.url, urllib.parse.urljoin(service.device.localhost, '/events/'))
                         async with session.request('SUBSCRIBE', service.url,
-                            headers={
-                                'TIMEOUT': 'Second-1800',
-                                'CALLBACK': '<{}>'.format(urllib.parse.urljoin(service.device.localhost, '/events/')),
-                                'NT': 'upnp:event',
-                                'Date': time.ctime()
-                            }) as resp:
+                                headers={
+                                    'TIMEOUT': 'Second-1800',
+                                    'CALLBACK': '<{}>'.format(urllib.parse.urljoin(service.device.localhost, '/events/')),
+                                    'NT': 'upnp:event',
+                                    'Date': time.ctime()
+                                }) as resp:
 
                             sid = resp.headers.get('SID')
                             #TODO: parse Second-1800
                             timeout = int(''.join(filter(str.isdigit, resp.headers.get('TIMEOUT'))))
                             self.sidtoservice[sid] = service
                             notify.connect('UPnP.DLNA.Event.{}'.format(sid), callback)
-                            self.log.warn('subscribe %s[%s] event SID:%s', service.device.friendlyName, service.serviceType, sid)
+                            self.log.warning('subscribe %s[%s] event SID:%s', service.device.friendlyName, service.serviceType, sid)
                         while True:
                             await asyncio.sleep(timeout/2)
                             async with session.request('SUBSCRIBE', service.url,
                                 headers={
                                     'SID': sid,
                                 }) as resp:
-                                self.log.warn('resubscribe %s[%s] event SID:%s', service.device.friendlyName, service.serviceType, resp.headers.get('SID'))
+                                self.log.warning('resubscribe %s[%s] event SID:%s', service.device.friendlyName, service.serviceType, resp.headers.get('SID'))
                     finally:
                         notify.disconnect('UPnP.DLNA.Event.{}'.format(sid), callback)
                         if sid in self.sidtoservice:
@@ -122,9 +120,9 @@ class EventsServer:
                             headers={
                                 'SID': sid,
                             }) as resp:
-                                self.log.warn('unsubscribe %s %s', resp, service.url)
+                                self.log.warning('unsubscribe %s %s', resp, service.url)
 
             except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError, aiohttp.client_exceptions.ClientResponseError) as err:
-                self.log.warn('event_task %s: %s', err.__class__.__name__, err)
+                self.log.warning('event_task %s: %s', err.__class__.__name__, err)
             await asyncio.sleep(60)
 

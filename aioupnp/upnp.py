@@ -8,6 +8,9 @@ import logging
 import functools
 import xmltodict
 import aiohttp
+import aiohttp.client_proto
+import aiohttp.client_exceptions
+import aiohttp.connector
 from . import notify
 from . import ssdp
 from . import dlna
@@ -27,18 +30,18 @@ class TCPConnector(aiohttp.connector.TCPConnector):
 
 
 class UPNPDevice:
-    def __init__(self, description={}, parent=None):
-        self.description = description
+    def __init__(self, description=None, parent=None):
+        self.description = description or {}
         self.parent = parent
         self.childs = []
         self.services = {}
         for service in self.description.get('serviceList', {}).get('service', []):
-            serviceType = self.getName(service.get('serviceType'))
-            if serviceType == 'AVTransport':
+            servicetype = self.getName(service.get('serviceType'))
+            if servicetype == 'AVTransport':
                 dlnaservice = dlna.AVTransport(self, service)
             else:
                 dlnaservice = dlna.DLNAService(self, service)
-            self.services[serviceType] = dlnaservice
+            self.services[servicetype] = dlnaservice
 
         if 'deviceList' in self.description:
             for child in self.description['deviceList'].get('device', []):
@@ -146,7 +149,6 @@ class UPNPServer:
             await self.http.shutdown()
             await self.handler.shutdown(60.0)
             await self.http.cleanup()
-
 
     async def parse_description(self, url):
         try:

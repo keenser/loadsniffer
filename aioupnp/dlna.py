@@ -10,6 +10,7 @@ from xml.parsers.expat import ExpatError
 import lxml.etree as xml
 import xmltodict
 
+
 class DIDLLite:
     namespaces = {
         'upnp': 'urn:schemas-upnp-org:metadata-1-0/upnp/',
@@ -26,13 +27,15 @@ class DIDLLite:
         for i, j in self.namespaces.items():
             xml.register_namespace(i, j)
 
-    def DIDLElement(self, item):
+    @staticmethod
+    def DIDLElement(item):
         element = xml.Element('DIDL-Lite', xmlns='urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/')
         element.append(item)
         return element
 
-    def VideoItem(self, itemid, parentid, restricted, title, resource):
-        n = lambda n, e: xml.QName(self.namespaces[n], e)
+    @staticmethod
+    def VideoItem(itemid, parentid, restricted, title, resource):
+        n = lambda n, e: xml.QName(DIDLLite.namespaces[n], e)
 
         item = xml.Element('item', {'id': str(itemid), 'parentID': str(parentid), 'restricted': str(restricted)})
         _title = xml.SubElement(item, n('dc', 'title'))
@@ -44,21 +47,26 @@ class DIDLLite:
         item.append(resource)
         return item
 
-    def Resource(self, protocolInfo, text):
+    @staticmethod
+    def Resource(protocolInfo, text):
         _resource = xml.Element('res', protocolInfo=protocolInfo)
         _resource.text = text
         return _resource
 
-    def toString(self, data):
+    @staticmethod
+    def toString(data):
         return xml.tostring(data, encoding='utf8', xml_declaration=True).decode()
 
-    def fromString(self, data):
+    @staticmethod
+    def fromString(data):
         try:
             return xmltodict.parse(data, dict_constructor=dict)
         except ExpatError:
             return None
 
+
 didl = DIDLLite()
+
 
 class DLNAAction:
     def __init__(self, service, action):
