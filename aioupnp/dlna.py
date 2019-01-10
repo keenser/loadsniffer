@@ -146,6 +146,10 @@ class DLNAService(dict):
     def uid(self):
         return '{}:{}'.format(self.device.usn, self.serviceType)
 
+    @property
+    def friendlyName(self):
+        return '{}:{}'.format(self.device.friendlyName, self.device.getName(self.serviceType))
+
 
 class AVTransport(DLNAService):
     async def stop(self):
