@@ -6,6 +6,7 @@
 import logging
 import urllib.parse
 import aiohttp
+from xml.parsers.expat import ExpatError
 import lxml.etree as xml
 import xmltodict
 
@@ -52,7 +53,10 @@ class DIDLLite:
         return xml.tostring(data, encoding='utf8', xml_declaration=True).decode()
 
     def fromString(self, data):
-        return xmltodict.parse(data, dict_constructor=dict)
+        try:
+            return xmltodict.parse(data, dict_constructor=dict)
+        except ExpatError:
+            return None
 
 didl = DIDLLite()
 
@@ -157,4 +161,3 @@ class AVTransport(DLNAService):
         dlnatags = 'http-get:*:{}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'.format(mime)
         metadata = didl.DIDLElement(didl.VideoItem(None, None, 0, title, didl.Resource(dlnatags, url)))
         return await self.action('SetNextAVTransportURI').call(InstanceID=0, NextURI=url, NextURIMetaData=didl.toString(metadata))
-

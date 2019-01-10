@@ -70,13 +70,14 @@ class EventsServer:
         self.running_tasks[service.uid] = self.loop.create_task(self.event_task(service, callback))
 
     async def unsubscribe(self, service: Type[dlna.DLNAService]):
-        task = self.running_tasks.pop(service.uid)
-        if task:
-            try:
-                task.cancel()
-                await task
-            except asyncio.CancelledError:
-                pass
+        if service.uid in self.running_tasks:
+            task = self.running_tasks.pop(service.uid)
+            if task:
+                try:
+                    task.cancel()
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     #async def shutdown(self):
     #    for task in list(self.running_tasks.keys()):

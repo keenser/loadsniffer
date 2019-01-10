@@ -84,7 +84,7 @@ class UPnPctrl:
                 self.log.debug('local: %s url: %s', self.device.media.localhost, url)
                 url = urllib.parse.urljoin(self.device.media.localhost, url)
             try:
-                async with aiohttp.ClientSession(read_timeout=5) as session:
+                async with aiohttp.ClientSession(timeout=aiohttp.client.ClientTimeout(connect=5)) as session:
                     async with session.head(url) as response:
                         ctype = response.headers.get('content-type', 'video/mp4')
                         service = self.device.media.service('AVTransport')
@@ -145,7 +145,7 @@ class UPnPctrl:
                     #for item in elt.getItems():
                     #    print("now playing:", item.title, item.id)
                     #    self.mediadevices[usn].status['item'].append({'url':item.id, 'title':item.title})
-                except SyntaxError:
+                except (TypeError, KeyError):
                     return
         elif variable.name == 'TransportState':
             self.log.info('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
