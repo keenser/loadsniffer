@@ -134,19 +134,19 @@ class SSDPServer:
         self.resend_notify_loop = None
         self.resend_mseatch_loop = None
 
-    async def __await__(self):
         mcast = self.loop.create_datagram_endpoint(
             lambda: SSDPMcastProtocol(self),
             local_addr=(SSDP_ADDR, SSDP_PORT), family=socket.AF_INET
         )
-        _, self.mcastprotocol = await self.loop.create_task(mcast)
+        _, self.mcastprotocol = self.loop.run_until_complete(mcast)
+
         ucast = self.loop.create_datagram_endpoint(
             lambda: SSDPProtocol(self),
             family=socket.AF_INET, proto=socket.IPPROTO_UDP
         )
-        self.transport, self.ucastprotocol = await self.loop.create_task(ucast)
+        self.transport, self.ucastprotocol = self.loop.run_until_complete(ucast)
+
         self.resend_mseatch_loop = self.loop.create_task(self.resendMSearch())
-        return self
 
     async def shutdown(self):
         for key in list(self.devices):
@@ -218,4 +218,3 @@ class SSDPServer:
         while True:
             self.MSearch()
             await asyncio.sleep(120)
-

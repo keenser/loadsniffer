@@ -131,7 +131,7 @@ class UPNPServer:
         notify.connect('UPnP.SSDP.update_device', self.update_device)
 
         self.events = events.EventsServer(loop=self.loop, http=self.http)
-        self.ssdp = self.loop.run_until_complete(ssdp.SSDPServer(loop=self.loop))
+        self.ssdp = ssdp.SSDPServer(loop=self.loop)
 
         if http is None:
             self.handler = self.http.make_handler()
