@@ -14,6 +14,7 @@ import logging.handlers
 import mimetypes
 import multiprocessing
 import aiohttp
+import aiohttp.client_exceptions
 import aioupnp
 import torrentstream
 
