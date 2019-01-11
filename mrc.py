@@ -309,7 +309,8 @@ class WebSocketFactory:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     self._msg = json.loads(msg.data)
-                    await wsclient.onMessage(self._msg)
+                    data = self._msg.pop('request', {})
+                    await wsclient.onMessage(self._msg, self._msg.get('action'), data)
                     self._msg = None
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
@@ -376,17 +377,16 @@ class WebSocketFactory:
             await wsclient.ws.close(code=aiohttp.WSCloseCode.GOING_AWAY,
                                     message='Server shutdown')
 
-    async def sendMessage(self, message, request: dict = None):
+    async def sendMessage(self, message, request: dict = None) -> None:
         if request is None:
             request = self._msg
         if request:
             request['response'] = message
             await self.ws.send_json(request)
 
-    async def onMessage(self, jsondata):
-        self.log.debug('onMessage action: %s', jsondata.get('action'))
-        if jsondata.get('action') == 'transporturi':
-            data = jsondata.pop('request', {})
+    async def onMessage(self, request: dict, action: str, data: dict) -> None:
+        self.log.debug('onMessage action: %s', action)
+        if action == 'transporturi':
             url = data.get('url')
             if url:
                 if data.get('cookie'):
@@ -395,22 +395,20 @@ class WebSocketFactory:
                     url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
                 self.log.info('push to play relative %s, url: %s', data.get('relative'), url)
                 await self.upnp.transporturi(url, data.get('title', 'Video'), data.get('relative', False))
-        elif jsondata.get('action') == 'play':
+        elif action == 'play':
             await self.upnp.play()
-        elif jsondata.get('action') == 'pause':
+        elif action == 'pause':
             await self.upnp.pause()
-        elif jsondata.get('action') == 'stop':
+        elif action == 'stop':
             await self.upnp.stop()
-        elif jsondata.get('action') == 'refresh':
+        elif action == 'refresh':
             self.upnp.refresh()
-        elif jsondata.get('action') == 'search':
-            data = jsondata.pop('request', {})
+        elif action == 'search':
             url = data.get('url')
             self.log.info('search %s', url)
             ret = await self.factory.info.youtube_dl(url)
             await self.sendMessage(ret)
-        elif jsondata.get('action') == 'add':
-            data = jsondata.pop('request', {})
+        elif action == 'add':
             url = data.get('url')
             self.log.info('add %s', url)
 
@@ -420,12 +418,12 @@ class WebSocketFactory:
                     self.torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
 
                 async def torrent_error_alert(alert):
-                    self.log.info('torrent_error_alert %s', jsondata)
-                    await self.sendMessage(None, jsondata)
+                    self.log.info('torrent_error_alert %s', request)
+                    await self.sendMessage(None, request)
                     remove_handlers()
 
                 async def tracker_announce_alert(alert):
-                    await self.sendMessage('done', jsondata)
+                    await self.sendMessage('done', request)
                     remove_handlers()
 
                 if self.torrent.add_torrent(url):
@@ -439,13 +437,12 @@ class WebSocketFactory:
                 await self.sendMessage(ret)
             else:
                 await bittorrent()
-        elif jsondata.get('action') == 'rm':
-            data = jsondata.pop('request', {})
+        elif action == 'rm':
             url = data.get('url')
             self.torrent.remove_torrent(url)
-        elif jsondata.get('action') == 'btstatus':
+        elif action == 'btstatus':
             await self.sendMessage(self.btfileslist(self.torrent.list_files()))
-        elif jsondata.get('action') == 'upnpstatus':
+        elif action == 'upnpstatus':
             message = self.upnp.device.status if self.upnp.device else None
             await self.sendMessage(message)
 
