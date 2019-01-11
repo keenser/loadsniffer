@@ -130,13 +130,14 @@ class UPNPServer:
         self.httpserver = None
         self.devices = {}
 
-        self.http.on_shutdown.append(self.shutdown)
         notify.connect('UPnP.SSDP.new_device', self.create_device)
         notify.connect('UPnP.SSDP.removed_device', self.remove_device)
         notify.connect('UPnP.SSDP.update_device', self.update_device)
 
         self.events = events.EventsServer(loop=self.loop, http=self.http)
         self.ssdp = ssdp.SSDPServer(loop=self.loop)
+
+        self.http.on_shutdown.append(self.shutdown)
 
         if http is None:
             self.handler = self.http.make_handler()

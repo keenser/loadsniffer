@@ -45,6 +45,7 @@ class EventsServer:
         eventsapp = aiohttp.web.Application()
         eventsapp.router.add_route('*', '/', self.events_handler)
         http.add_subapp('/events/', eventsapp)
+        http.on_shutdown.append(self.shutdown)
 
     async def events_handler(self, request):
         self.log.debug('events_handler request %s', request)
@@ -68,6 +69,18 @@ class EventsServer:
                     self.log.debug('events %s', self.events)
                     notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
         return aiohttp.web.Response()
+
+    async def shutdown(self, app=None):
+        for uid in list(self.running_tasks.keys()):
+            task = self.running_tasks.pop(uid)
+            self.log.info('shutdown %s', uid)
+            if task:
+                try:
+                    task.cancel()
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                self.log.info('task.cancel done %s', uid)
 
     async def subscribe(self, service: Type[dlna.DLNAService], callback: Awaitable[Callable[[Dict[str, Event]], None]]):
         self.running_tasks[service.uid] = self.loop.create_task(self.event_task(service, callback))
@@ -130,7 +143,7 @@ class EventsServer:
                                                headers={
                                                    'SID': sid,
                                                }) as resp:
-                        self.log.warning('unsubscribe %s %s', service.friendlyName, resp.headers)
+                        self.log.warning('unsubscribe %s retcode: %s', service.friendlyName, resp.status)
                 except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError,
                         aiohttp.client_exceptions.ClientResponseError):
                     pass
