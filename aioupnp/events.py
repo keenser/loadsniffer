@@ -129,7 +129,7 @@ class EventsServer:
                                                  resp.headers.get('SID'))
                     except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError,
                             aiohttp.client_exceptions.ClientResponseError) as err:
-                        self.log.warning('event_task %s', err.__class__.__name__, service.friendlyName)
+                        self.log.warning('event_task %s %s', err.__class__.__name__, service.friendlyName)
                     finally:
                         notify.disconnect('UPnP.DLNA.Event.{}'.format(sid), callback)
                         if sid in self.sidtoservice:
