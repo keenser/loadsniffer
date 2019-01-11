@@ -9,6 +9,7 @@ import json
 import urllib.parse
 import os.path
 import sys
+import socket
 import logging
 import logging.handlers
 import mimetypes
@@ -493,6 +494,9 @@ def main():
     site = aiohttp.web.TCPSite(runner, None, httpport, reuse_port=True)
     loop.run_until_complete(site.start())
 
+    for sock in site._server.sockets:
+        sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
+
     try:
         loop.run_forever()
     except KeyboardInterrupt:
@@ -500,8 +504,6 @@ def main():
     finally:
         loop.run_until_complete(runner.cleanup())
         loop.close()
-
-    #site.socket.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
 
 
 if __name__ == '__main__':
