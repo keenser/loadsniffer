@@ -308,10 +308,9 @@ class WebSocketFactory:
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
-                    self._msg = json.loads(msg.data)
-                    data = self._msg.pop('request', {})
-                    await wsclient.onMessage(self._msg, self._msg.get('action'), data)
-                    self._msg = None
+                    request = json.loads(msg.data)
+                    data = request.pop('request', {})
+                    await wsclient.onMessage(request, request.get('action'), data)
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
         except (OSError, TimeoutError):
@@ -386,6 +385,7 @@ class WebSocketFactory:
 
     async def onMessage(self, request: dict, action: str, data: dict) -> None:
         self.log.debug('onMessage action: %s', action)
+        self._msg = request
         if action == 'transporturi':
             url = data.get('url')
             if url:
