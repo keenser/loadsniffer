@@ -488,19 +488,18 @@ def main():
 
     logging.info('listening aiohttp server %s on port %d', aiohttp.__version__, httpport)
 
-    handler = http.make_handler()
-    server = loop.create_server(handler, None, httpport, reuse_port=True)
-    server = loop.run_until_complete(server)
+    runner = aiohttp.web.AppRunner(http)
+    loop.run_until_complete(runner.setup())
+    site = aiohttp.web.TCPSite(runner, None, httpport, reuse_port=True)
+    loop.run_until_complete(site.start())
 
     try:
         loop.run_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        loop.run_until_complete(http.shutdown())
-        loop.run_until_complete(handler.shutdown(60.0))
+        loop.run_until_complete(runner.cleanup())
         loop.close()
-    #aiohttp.web.run_app(http, port=8883, reuse_port=True)
 
     #site.socket.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
 
