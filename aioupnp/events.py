@@ -130,7 +130,7 @@ class EventsServer:
                                                headers={
                                                    'SID': sid,
                                                }) as resp:
-                        self.log.warning('unsubscribe %s %s', service.friendlyName, resp)
+                        self.log.warning('unsubscribe %s %s', service.friendlyName, resp.headers)
                 except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError,
                         aiohttp.client_exceptions.ClientResponseError):
                     pass

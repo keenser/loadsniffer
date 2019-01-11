@@ -14,14 +14,16 @@ import logging.handlers
 import mimetypes
 import multiprocessing
 import aiohttp
+import aiohttp.web
 import aiohttp.client_exceptions
 import aioupnp
 import torrentstream
+from typing import Optional
 
-#delete generic extractor
 have_youtube_dl = False
 try:
     import youtube_dl
+    # delete generic extractor
     youtube_dl.extractor._ALL_CLASSES.pop()
     have_youtube_dl = True
 except ModuleNotFoundError:
@@ -38,18 +40,23 @@ class MediaDevice:
 
 
 class UPnPctrl:
-    def __init__(self, loop=None, http=None, httpport=0):
+    def __init__(self,
+                 loop: Optional[asyncio.AbstractEventLoop] = None,
+                 http: Optional[aiohttp.web.Application] = None,
+                 httpport: int = 0
+                 ) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
-        self.aioupnp = aioupnp.upnp.UPNPServer(loop=loop, http=http, httpport=httpport)
-        aioupnp.notify.connect('UPnP.Device.detection_completed', self.media_renderer_found)
-        aioupnp.notify.connect('UPnP.RootDevice.removed', self.media_renderer_removed)
 
         self.loop = loop or asyncio.get_event_loop()
+        self.aioupnp = aioupnp.upnp.UPNPServer(loop=self.loop, http=http, httpport=httpport)
+        aioupnp.notify.connect('UPnP.Device.detection_completed', self._media_renderer_found)
+        aioupnp.notify.connect('UPnP.RootDevice.removed', self._media_renderer_removed)
+
         self.mediadevices = {}
         self.device = None
         self.registered_callbacks = {}
 
-    async def media_renderer_removed(self, device=None):
+    async def _media_renderer_removed(self, device: aioupnp.UPNPDevice) -> None:
         self.log.info('media renderer removed %s %s', device.usn, device.friendlyName)
         self.mediadevices.pop(device.usn, None)
         if self.device:
@@ -60,13 +67,10 @@ class UPnPctrl:
                     self.device = None
                 self.trigger_callbacks()
 
-    async def media_renderer_found(self, device=None):
-        if device is None:
-            return
+    async def _media_renderer_found(self, device: aioupnp.UPNPDevice) -> None:
+        self.log.info('found upnp device %s %s %s', device.usn, device.friendlyName, device.friendlyDeviceType)
 
-        self.log.info('found upnp device %s %s', device.usn, device.friendlyName)
-
-        if device.deviceType.find('MediaRenderer') < 0:
+        if device.friendlyDeviceType != 'MediaRenderer':
             return
 
         self.log.info('media renderer %s', device.friendlyName)

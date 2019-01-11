@@ -15,6 +15,7 @@ from . import notify
 from . import ssdp
 from . import dlna
 from . import events
+from typing import Optional
 
 
 class ResponseHandler(aiohttp.client_proto.ResponseHandler):
@@ -116,7 +117,11 @@ class UPNPRootDevice(UPNPDevice):
 
 
 class UPNPServer:
-    def __init__(self, loop=None, http=None, httpport=0):
+    def __init__(self,
+                 loop: Optional[asyncio.AbstractEventLoop] = None,
+                 http: Optional[aiohttp.web.Application] = None,
+                 httpport: int = 0
+                 ) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         self.loop = loop or asyncio.get_event_loop()
         self.http = aiohttp.web.Application() if http is None else http #can't use 'http or Application()'
