@@ -268,6 +268,7 @@ class WebSocketFactory:
         self._torrent = torrent
         self._upnpupdate = None
         self._btupdate = None
+        self._msg = None
         self.loop = loop
         self.peer = peer
         self.local = local
@@ -303,7 +304,9 @@ class WebSocketFactory:
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
-                    await wsclient.onMessage(msg.data)
+                    self._msg = json.loads(msg.data)
+                    await wsclient.onMessage(self._msg)
+                    self._msg = None
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
         except (OSError, TimeoutError):
@@ -343,10 +346,10 @@ class WebSocketFactory:
 
     async def onOpen(self):
         async def upnpupdate(message):
-            await self.sendMessage(message, {'action':'upnpstatus'})
+            await self.sendMessage(message, {'action': 'upnpstatus'})
 
         async def btupdate(alert):
-            await self.sendMessage(self.btfileslist(alert.files), {'action':'btstatus'})
+            await self.sendMessage(self.btfileslist(alert.files), {'action': 'btstatus'})
 
         self.log.info('WS client connected %s %s', self.peer, self.local)
         self.factory.wsclients.add(self)
@@ -369,12 +372,14 @@ class WebSocketFactory:
             await wsclient.ws.close(code=aiohttp.WSCloseCode.GOING_AWAY,
                                     message='Server shutdown')
 
-    async def sendMessage(self, message, request):
-        request['response'] = message
-        await self.ws.send_json(request)
+    async def sendMessage(self, message, request: dict = None):
+        if request is None:
+            request = self._msg
+        if request:
+            request['response'] = message
+            await self.ws.send_json(request)
 
-    async def onMessage(self, payload):
-        jsondata = json.loads(payload)
+    async def onMessage(self, jsondata):
         self.log.debug('onMessage action: %s', jsondata.get('action'))
         if jsondata.get('action') == 'transporturi':
             data = jsondata.pop('request', {})
@@ -399,7 +404,7 @@ class WebSocketFactory:
             url = data.get('url')
             self.log.info('search %s', url)
             ret = await self.factory.info.youtube_dl(url)
-            await self.sendMessage(ret, jsondata)
+            await self.sendMessage(ret)
         elif jsondata.get('action') == 'add':
             data = jsondata.pop('request', {})
             url = data.get('url')
@@ -423,11 +428,11 @@ class WebSocketFactory:
                     self.torrent.add_alert_handler('torrent_error_alert', torrent_error_alert)
                     self.torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
                 else:
-                    await self.sendMessage(None, jsondata)
+                    await self.sendMessage(None)
 
             ret = await self.factory.info.youtube_dl(url)
             if ret:
-                await self.sendMessage(ret, jsondata)
+                await self.sendMessage(ret)
             else:
                 await bittorrent()
         elif jsondata.get('action') == 'rm':
@@ -435,10 +440,10 @@ class WebSocketFactory:
             url = data.get('url')
             self.torrent.remove_torrent(url)
         elif jsondata.get('action') == 'btstatus':
-            await self.sendMessage(self.btfileslist(self.torrent.list_files()), jsondata)
+            await self.sendMessage(self.btfileslist(self.torrent.list_files()))
         elif jsondata.get('action') == 'upnpstatus':
             message = self.upnp.device.status if self.upnp.device else None
-            await self.sendMessage(message, jsondata)
+            await self.sendMessage(message)
 
 
 async def rootindex(app, handler):
