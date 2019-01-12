@@ -462,6 +462,8 @@ def main():
 
     def exception_handler(loop, context):
         logging.warning('loop: %s', context)
+        if 'exception' in context:
+            logging.debug('traceback %s', context['exception'].__traceback__)
 
     loop.set_exception_handler(exception_handler)
 
