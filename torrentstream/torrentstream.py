@@ -316,12 +316,9 @@ class TorrentStream:
 
     def _alert_queue_loop(self):
         self.log.debug("enter to _alert_queue_loop")
-        try:
-            while not self.queue_event.is_set():
-                if self.session.wait_for_alert(1000):
-                    self.loop.call_soon_threadsafe(self._handle_alert, self.session.pop_alerts())
-        except asyncio.CancelledError:
-            return
+        while not self.queue_event.is_set():
+            if self.session.wait_for_alert(1000):
+                self.loop.call_soon_threadsafe(self._handle_alert, self.session.pop_alerts())
 
     def _handle_alert(self, alerts):
         for alert in alerts:
