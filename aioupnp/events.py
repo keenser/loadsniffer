@@ -71,9 +71,19 @@ class EventsServer:
         return aiohttp.web.Response()
 
     async def shutdown(self, app=None):
+        self.log.info('shutdown')
         for uid in list(self.running_tasks.keys()):
+            await self.unsubscribe(uid)
+
+    def subscribe(self,
+                  service: Type[dlna.DLNAService],
+                  callback: Awaitable[Callable[[Dict[str, Event]], None]]
+                  ) -> None:
+        self.running_tasks[service.uid] = self.loop.create_task(self._event_task(service, callback))
+
+    async def unsubscribe(self, uid: str) -> None:
+        if uid in self.running_tasks:
             task = self.running_tasks.pop(uid)
-            self.log.info('shutdown %s', uid)
             if task:
                 try:
                     task.cancel()
@@ -82,21 +92,7 @@ class EventsServer:
                     pass
                 self.log.info('task.cancel done %s', uid)
 
-    async def subscribe(self, service: Type[dlna.DLNAService], callback: Awaitable[Callable[[Dict[str, Event]], None]]):
-        self.running_tasks[service.uid] = self.loop.create_task(self.event_task(service, callback))
-
-    async def unsubscribe(self, service: Type[dlna.DLNAService]):
-        if service.uid in self.running_tasks:
-            task = self.running_tasks.pop(service.uid)
-            if task:
-                try:
-                    task.cancel()
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                self.log.debug('task.cancel done %s', service.friendlyName)
-
-    async def event_task(self, service, callback):
+    async def _event_task(self, service, callback):
         async with aiohttp.ClientSession(read_timeout=5, raise_for_status=True) as session:
             sid = None
             try:

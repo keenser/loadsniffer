@@ -111,7 +111,7 @@ class DLNAService(dict):
 
     async def shutdown(self):
         if self.events_subscription:
-            await self.device.events.unsubscribe(self)
+            await self.device.events.unsubscribe(self.uid)
 
     async def eventscallback(self, data):
         for variable, callback in self.callbacks.items():
@@ -119,16 +119,16 @@ class DLNAService(dict):
             event.service = self
             callback(event)
 
-    async def subscribe(self, variable, callback):
+    def subscribe(self, variable, callback):
         self.callbacks[variable] = callback
         if self.events_subscription is False:
             self.events_subscription = True
-            await self.device.events.subscribe(self, self.eventscallback)
+            self.device.events.subscribe(self, self.eventscallback)
 
     async def resubscribe(self):
         if self.events_subscription:
-            await self.device.events.unsubscribe(self)
-            await self.device.events.subscribe(self, self.eventscallback)
+            await self.device.events.unsubscribe(self.uid)
+            self.device.events.subscribe(self, self.eventscallback)
 
     @property
     def location(self):

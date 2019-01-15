@@ -8,6 +8,7 @@ import logging
 import functools
 import xmltodict
 import aiohttp
+import aiohttp.web
 import aiohttp.client_proto
 import aiohttp.client_exceptions
 import aiohttp.connector
@@ -32,30 +33,35 @@ class TCPConnector(aiohttp.connector.TCPConnector):
 
 class UPNPDevice:
     def __init__(self, description=None, parent=None):
-        self.description = description or {}
-        self.parent = parent
-        self.childs = []
-        self.services = {}
-        for service in self.description.get('serviceList', {}).get('service', []):
+        self.log = logging.getLogger(self.__class__.__name__)
+        self._description = description or {}
+        self._parent_device = parent
+        self._device_list = []
+        self._service_list = {}
+        for service in self._description.get('serviceList', {}).get('service', []):
             servicetype = self.getName(service.get('serviceType'))
             if servicetype == 'AVTransport':
                 dlnaservice = dlna.AVTransport(self, service)
             else:
                 dlnaservice = dlna.DLNAService(self, service)
-            self.services[servicetype] = dlnaservice
+            self._service_list[servicetype] = dlnaservice
 
-        if 'deviceList' in self.description:
-            for child in self.description['deviceList'].get('device', []):
+        if 'deviceList' in self._description:
+            for child in self._description['deviceList'].get('device', []):
                 dev = UPNPDevice(description=child, parent=self)
-                self.childs.append(dev)
+                self._device_list.append(dev)
         notify.send('UPnP.Device.detection_completed', device=self)
 
     async def shutdown(self):
-        for service in self.services.values():
+        self.log.info('shutdown %s %s', self.friendlyName, self.usn)
+        for service in self._service_list.values():
             await service.shutdown()
 
+        for device in self._device_list:
+            await device.shutdown()
+
     async def update_callback(self):
-        for service in self.services.values():
+        for service in self._service_list.values():
             await service.resubscribe()
 
     @staticmethod
@@ -67,7 +73,7 @@ class UPNPDevice:
 
     @property
     def ssdp(self):
-        return self.parent.ssdp
+        return self._parent_device.ssdp
 
     @property
     def usn(self):
@@ -79,7 +85,7 @@ class UPNPDevice:
 
     @property
     def deviceType(self):
-        return self.description.get('deviceType')
+        return self._description.get('deviceType')
 
     @property
     def friendlyDeviceType(self):
@@ -87,18 +93,18 @@ class UPNPDevice:
 
     @property
     def friendlyName(self):
-        return self.description.get('friendlyName')
+        return self._description.get('friendlyName')
 
     def service(self, name):
-        return self.services.get(name)
+        return self._service_list.get(name)
 
     @property
     def events(self):
-        return self.parent.events
+        return self._parent_device.events
 
     @property
     def localhost(self):
-        return self.description.get('localhost')
+        return self._description.get('localhost')
 
 
 class UPNPRootDevice(UPNPDevice):
@@ -145,6 +151,9 @@ class UPNPServer:
             self.httpport = self.httpserver.sockets[0].getsockname()[1]
 
     async def shutdown(self, app=None):
+        #for device in self.devices.values():
+        #    await device.shutdown()
+
         await self.ssdp.shutdown()
 
         if self.httpserver:
@@ -188,3 +197,5 @@ class UPNPServer:
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.get(device.get('usn'))
             await upnpdevice.update_callback()
+        else:
+            await self.create_device(device=device)

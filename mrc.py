@@ -14,6 +14,7 @@ import logging
 import logging.handlers
 import mimetypes
 import multiprocessing
+import traceback
 import aiohttp
 import aiohttp.web
 import aiohttp.client_exceptions
@@ -131,11 +132,11 @@ class UPnPctrl:
                 self.log.warning('stop %s', err)
 
     def add_alert_handler(self, callback):
-        self.registered_callbacks[id(callback)] = {'status': None, 'callback': callback}
+        self.registered_callbacks[hash(callback)] = {'status': None, 'callback': callback}
         self.trigger_callbacks()
 
     def remove_alert_handler(self, callback):
-        self.registered_callbacks.pop(id(callback), None)
+        self.registered_callbacks.pop(hash(callback), None)
 
     def state_variable_change(self, variable):
         usn = variable.service.device.usn
@@ -271,8 +272,6 @@ class WebSocketFactory:
         self._factory = factory
         self._upnp = upnp
         self._torrent = torrent
-        self._upnpupdate = None
-        self._btupdate = None
         self._msg = None
         self.loop = loop
         self.peer = peer
@@ -349,28 +348,23 @@ class WebSocketFactory:
             response.append(data)
         return response
 
+    async def _btupdate(self, alert):
+        await self.sendMessage(self.btfileslist(alert.files), {'action': 'btstatus'})
+
+    async def _upnpupdate(self, message):
+        await self.sendMessage(message, {'action': 'upnpstatus'})
+
     async def onOpen(self):
-        async def upnpupdate(message):
-            await self.sendMessage(message, {'action': 'upnpstatus'})
-
-        async def btupdate(alert):
-            await self.sendMessage(self.btfileslist(alert.files), {'action': 'btstatus'})
-
         self.log.info('WS client connected %s %s', self.peer, self.local)
         self.factory.wsclients.add(self)
-        # handle function id must be same on adding and removing alert
-        self._upnpupdate = upnpupdate
-        self._btupdate = btupdate
         self.upnp.add_alert_handler(self._upnpupdate)
         self.torrent.add_alert_handler('files_list_update_alert', self._btupdate)
 
     def onClose(self):
         self.log.info('WS client closed %s %s', self.peer, self.local)
         self.factory.wsclients.discard(self)
-        if self._upnpupdate:
-            self.upnp.remove_alert_handler(self._upnpupdate)
-        if self._btupdate:
-            self.torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
+        self.upnp.remove_alert_handler(self._upnpupdate)
+        self.torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
 
     async def onShutdown(self, app):
         for wsclient in set(self.wsclients):
