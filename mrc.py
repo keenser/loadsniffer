@@ -463,7 +463,7 @@ def main():
 
     logging.getLogger('UPnPctrl').setLevel(logging.INFO)
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
-    logging.getLogger('torrentstream').setLevel(logging.INFO)
+    logging.getLogger('torrent').setLevel(logging.INFO)
     logging.getLogger('aioupnp').setLevel(logging.INFO)
     logging.getLogger('aiohttp.access').setLevel(logging.WARN)
 
