@@ -9,7 +9,6 @@ torrent to http proxy module
 import mimetypes
 import glob
 import os
-import sys
 import asyncio
 from collections import namedtuple
 import logging
@@ -19,6 +18,7 @@ from aiohttp import web
 import libtorrent
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
+
 
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
@@ -214,7 +214,7 @@ class TorrentStream:
         self._files_list = {}
         self.options = options
         self.options.setdefault('save_path', '/tmp/')
-        self.loop = options['loop']
+        self.loop = options.get('loop', asyncio.get_event_loop())
         self.queue_event = asyncio.Event()
 
         self.http = web.Application()
@@ -589,21 +589,3 @@ class TorrentStream:
 
         return web.json_response(ret)
 
-
-def main():
-    """ main loop """
-    logging.basicConfig(level=logging.DEBUG)
-    loop = asyncio.get_event_loop()
-
-    app = web.Application()
-
-    save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
-    torrentstream = TorrentStream(save_path=save_path, loop=loop)
-
-    app.add_subapp('/bt/', torrentstream.http)
-
-    web.run_app(app, port=9999)
-
-
-if __name__ == '__main__':
-    main()
