@@ -84,8 +84,8 @@ class UPnPctrl:
         self.trigger_callbacks()
 
         service = device.service('AVTransport')
-        await service.subscribe('CurrentTrackMetaData', self.state_variable_change)
-        await service.subscribe('TransportState', self.state_variable_change)
+        service.subscribe('CurrentTrackMetaData', self.state_variable_change)
+        service.subscribe('TransportState', self.state_variable_change)
 
     async def transporturi(self, url, title='Video', relative=False):
         if self.device:
@@ -451,18 +451,19 @@ async def rootindex(app, handler):
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
     loop = asyncio.get_event_loop()
 
     def exception_handler(loop, context):
-        logging.warning('loop: %s', context)
+        logging.warning('exception_handler: %s', context)
         if 'exception' in context:
-            logging.debug('traceback %s', context['exception'].__traceback__)
+            logging.debug('traceback %s', ''.join(traceback.format_list(traceback.extract_tb(context['exception'].__traceback__))))
 
     loop.set_exception_handler(exception_handler)
 
     logging.getLogger('UPnPctrl').setLevel(logging.INFO)
-    logging.getLogger('SSDPServer').setLevel(logging.WARN)
+    logging.getLogger('SSDPServer').setLevel(logging.INFO)
+    logging.getLogger('SSDPMcastProtocol').setLevel(logging.INFO)
     logging.getLogger('EventsServer').setLevel(logging.INFO)
     logging.getLogger('TorrentProducer').setLevel(logging.INFO)
     logging.getLogger('TorrentStream').setLevel(logging.INFO)
