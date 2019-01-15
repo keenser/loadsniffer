@@ -36,7 +36,7 @@ class Event:
 
 class EventsServer:
     def __init__(self, loop, http):
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.loop = loop
 
         self.events = {}

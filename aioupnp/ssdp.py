@@ -19,7 +19,7 @@ class SSDPDevice(dict):
 
     def __init__(self, server, data={}):
         super().__init__(data)
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.server = server
         self.handle = None
         self.manifestation = None
@@ -88,7 +88,7 @@ class SSDPLocalDevice(SSDPDevice):
 
 class SSDPProtocol(asyncio.DatagramProtocol):
     def __init__(self, server):
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.server = server
 
     def datagram_received(self, data, addr):
@@ -131,7 +131,7 @@ class SSDPMcastProtocol(SSDPProtocol):
 
 class SSDPServer:
     def __init__(self, loop=None):
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.loop = loop or asyncio.get_event_loop()
         self.devices = {}
         self.resend_notify_loop = None

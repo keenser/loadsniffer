@@ -33,7 +33,7 @@ class TCPConnector(aiohttp.connector.TCPConnector):
 
 class UPNPDevice:
     def __init__(self, description=None, parent=None):
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self._description = description or {}
         self._parent_device = parent
         self._device_list = []
@@ -128,7 +128,7 @@ class UPNPServer:
                  http: Optional[aiohttp.web.Application] = None,
                  httpport: int = 0
                  ) -> None:
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.loop = loop or asyncio.get_event_loop()
         self.http = aiohttp.web.Application() if http is None else http #can't use 'http or Application()'
         self.httpport = httpport

@@ -462,12 +462,9 @@ def main():
     loop.set_exception_handler(exception_handler)
 
     logging.getLogger('UPnPctrl').setLevel(logging.INFO)
-    logging.getLogger('SSDPServer').setLevel(logging.INFO)
-    logging.getLogger('SSDPMcastProtocol').setLevel(logging.INFO)
-    logging.getLogger('EventsServer').setLevel(logging.INFO)
-    logging.getLogger('TorrentProducer').setLevel(logging.INFO)
-    logging.getLogger('TorrentStream').setLevel(logging.INFO)
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
+    logging.getLogger('torrentstream').setLevel(logging.INFO)
+    logging.getLogger('aioupnp').setLevel(logging.INFO)
     logging.getLogger('aiohttp.access').setLevel(logging.WARN)
 
     httpport = 8883
