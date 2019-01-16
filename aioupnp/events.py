@@ -134,12 +134,10 @@ class EventsServer:
                                 self.events.pop(service.uid)
                     await asyncio.sleep(60)
             finally:
-                try:
-                    async with session.request('UNSUBSCRIBE', service.url,
-                                               headers={
-                                                   'SID': sid,
-                                               }) as resp:
-                        self.log.warning('unsubscribe %s retcode: %s', service.friendlyName, resp.status)
-                except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError,
-                        aiohttp.client_exceptions.ClientResponseError):
-                    pass
+                if sid:
+                    try:
+                        async with session.request('UNSUBSCRIBE', service.url, headers={'SID': sid}) as resp:
+                            self.log.warning('unsubscribe %s retcode: %s', service.friendlyName, resp.status)
+                    except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError,
+                            aiohttp.client_exceptions.ClientResponseError):
+                        pass

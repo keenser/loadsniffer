@@ -455,9 +455,9 @@ def main():
     loop = asyncio.get_event_loop()
 
     def exception_handler(loop, context):
-        logging.warning('exception_handler: %s', context)
+        logging.error('exception_handler: %s', context)
         if 'exception' in context:
-            logging.debug('traceback %s', ''.join(traceback.format_list(traceback.extract_tb(context['exception'].__traceback__))))
+            logging.error('traceback %s', ''.join(traceback.format_list(traceback.extract_tb(context['exception'].__traceback__))))
 
     loop.set_exception_handler(exception_handler)
 
