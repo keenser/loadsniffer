@@ -435,6 +435,9 @@ class WebSocketFactory:
         elif action == 'rm':
             url = data.get('url')
             self.torrent.remove_torrent(url)
+        elif action == 'load':
+            info_hash = data.get('hash')
+            self.torrent.load_torrent(info_hash)
         elif action == 'btstatus':
             await self.sendMessage(self.btfileslist(self.torrent.list_files()))
         elif action == 'upnpstatus':

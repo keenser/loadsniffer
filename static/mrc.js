@@ -242,8 +242,24 @@ var UpdateBTStatus = function(data) {
                 });
             }
         });
+        let load = document.createElement("span");
+	load.textContent = '⇩';
+        load.title = 'Download all files from ' + data[i].title;
+        load.addEventListener('click',
+        function(e) {
+            if (sendMessage !== undefined) {
+                sendMessage({
+                    action: "load",
+                    request: {
+                        hash: data[i].info_hash
+                    }
+                });
+            }
+        });
+
         let head = document.createElement("div");
         head.appendChild(title);
+        head.appendChild(load);
         head.appendChild(remove);
 
         let files = document.createElement("div");

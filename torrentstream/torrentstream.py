@@ -399,6 +399,16 @@ class TorrentStream:
             return {'error': '{} incorrect hash'.format(info_hash)}
         return {'error': '{} not found'.format(info_hash)}
 
+    def load_torrent(self, info_hash):
+        """load torrent"""
+        try:
+            handle = self.session.find_torrent(libtorrent.sha1_hash(binascii.unhexlify(info_hash)))
+            if handle.is_valid():
+                handle.prioritize_pieces(handle.get_torrent_info().num_pieces() * [TorrentStream.LOW])
+                return {'status': '{} loading'.format(info_hash)}
+        except TypeError:
+            return {'error': '{} incorrect hash'.format(info_hash)}
+        return {'error': '{} not found'.format(info_hash)}
     def pause_torrent(self, info_hash):
         """pause/resume torrent"""
         try:
