@@ -7,6 +7,7 @@ import asyncio
 import logging
 import socket
 import struct
+import urllib.parse
 from . import notify
 from . import version
 
@@ -165,7 +166,9 @@ class SSDPServer:
         if headers.get('usn') in self.devices:
             self.log.debug('updating last-seen for %r', headers.get('usn'))
             device = self.devices.get(headers.get('usn'))
-            if headers.get('location') != device.get('location'):
+            _, current_port = urllib.parse.splitnport(urllib.parse.urlsplit(device.get('location')).netloc)
+            _, headers_port = urllib.parse.splitnport(urllib.parse.urlsplit(headers.get('location')).netloc)
+            if current_port != headers_port:
                 device.update(headers)
                 if device.get('nt') == 'upnp:rootdevice':
                     notify.send('UPnP.SSDP.update_device', device=device)
