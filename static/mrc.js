@@ -77,6 +77,7 @@ var mrc = new MRCServer(urlcfg, function(message) {
         UpdateUPNPStatus(message.response);
     }
 });
+
 var sendMessage = mrc.sendMessage;
 var onStartupOrOnInstalledListener = function() {
     console.log("onStartupOrOnInstalledListener");
@@ -101,6 +102,35 @@ var copyToClipboard = function (str) {
     }
     document.execCommand("Copy", false, null );
 }
+
+var fetchSimilarHeaders = function(url, callback) {
+    let request = new XMLHttpRequest();
+    request.onreadystatechange = function () {
+        if (request.readyState === XMLHttpRequest.DONE) {
+            //
+            // The following headers may often be similar
+            // to those of the original page request...
+            //
+            if (callback && typeof callback === 'function') {
+                let headers = request.getAllResponseHeaders();
+                let arr = headers.trim().split(/[\r\n]+/);
+                let headerMap = {};
+                arr.forEach(function (line) {
+                    let parts = line.split(': ');
+                    let header = parts.shift();
+                    let value = parts.join(': ');
+                    headerMap[header] = value;
+                });
+
+                callback(headerMap);
+            }
+        }
+    };
+
+    request.open('HEAD', url, true);
+    request.send(null);
+}
+
 var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
     let span = document.createElement("span");
     let relativeurl = url;
@@ -126,6 +156,13 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
             });
 	}
         copyToClipboard(relativeurl);
+        let video = document.getElementById("video")
+        if(video !== undefined && video.className === 'active') {
+            fetchSimilarHeaders(url, function(headers) {
+                video.setAttribute('src', relativeurl);
+                video.setAttribute('type', headers['content-type']);
+            });
+        }
     });
     line.appendChild(span);
 }
@@ -215,6 +252,18 @@ var UpdateUPNPStatus = function(data) {
         container.appendChild(pause);
         container.appendChild(stop);
         container.appendChild(stat);
+
+        let video = document.getElementById("video")
+        if(video !== undefined) {
+            video.className = 'hided';
+            video.pause()
+        }
+    }
+    else {
+        let video = document.getElementById("video")
+        if(video !== undefined) {
+            video.className = 'active';
+        }
     }
 }
 
@@ -229,7 +278,7 @@ var UpdateBTStatus = function(data) {
         let title = document.createElement("span");
         title.textContent = data[i].title;
         let remove = document.createElement("span");
-        remove.textContent = 'X';
+        remove.textContent = '×';
         remove.title = 'Remove ' + data[i].title;
         remove.addEventListener('click',
         function(e) {

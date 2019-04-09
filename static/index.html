@@ -25,8 +25,11 @@ document.onload = onStartupOrOnInstalledListener();
 </script>
 </head>
 <body class='index'>
+<div class='control'>
 <input type='text' id='input' class='input' placeholder='magnet or url' oninput='AddInput()'/>
+</div>
 <div class='control' id='upnp'></div>
+<video id='video' width='100%' controls autoplay></video>
 <h1>Bittorrent Stream:</h1>
 <div id='bt'></div>
 </body>
