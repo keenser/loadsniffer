@@ -27,12 +27,12 @@ var LogListener = function(tabid, url, title, details, callback) {
 var CommonListener = function(tabid, url, title, details, callback) {
     console.log("CommonListener:", tabid, title, url, details.type);
     url = url.replace(/Seg(\d)+-Frag(\d)+/, "");
-    let data = {
+    let ret = {
         src: 'common',
         url: url,
         title: title,
     };
-    callback(tabid, data);
+    callback(tabid, ret);
 }
 var ResolveListener = function(tabid, url, title, details, callback) {
     console.log("ResolveListener:", tabid, title, url, details);
@@ -70,25 +70,25 @@ var RuTubeListener = function(tabid, url, title, details, callback) {
                     });
                 }
             }
-            let data = {
+            let ret = {
                 src: '_rutube',
                 url: m3u8,
                 title: title,
                 bitrate: bitrate
             };
-            callback(tabid, data);
+            callback(tabid, ret);
         });
     });
 }
 var HDSListener = function(tabid, url, title, details, callback) {
     console.log("TrackListener:", tabid, title, url, details.type);
     url = url.substring(0, url.lastIndexOf('/'));
-    let data = {
+    let ret = {
         src: 'hds',
         url: url,
         title: title
     }
-    callback(tabid, data);
+    callback(tabid, ret);
 }
 var f4mListener = function(tabid, url, title, details, callback) {
     console.log("f4mListener:", tabid, title, url, details.type);
@@ -112,13 +112,13 @@ var f4mListener = function(tabid, url, title, details, callback) {
                 bitrate: media[i].getAttribute("bitrate")
             })
         }
-        let data = {
+        let ret = {
             src: 'f4m',
             url: url,
             title: title,
             bitrate: bitrate
         };
-        callback(tabid, data);
+        callback(tabid, ret);
     });
 }
 var MailRuListener = function(tabid, url, title, details, callback) {
@@ -129,13 +129,13 @@ var MailRuListener = function(tabid, url, title, details, callback) {
             url: url,
             name: 'video_key'
         }, function(cookie) {
-            let data = {
+            let ret = {
                 src: 'mailru',
                 url: url,
                 title: title,
                 cookie: cookie.name + '=' + cookie.value
             };
-            callback(tabid, data);
+            callback(tabid, ret);
             return;
         });
     } else if (type.startsWith('application/json')) {
@@ -166,13 +166,13 @@ var MailRuListener = function(tabid, url, title, details, callback) {
                         cookie: cookie.name + '=' + cookie.value
                     })
                 }
-                let data = {
+                let ret = {
                     src: 'mailru',
                     url: metaurl,
                     title: title,
                     bitrate: bitrate
                 };
-                callback(tabid, data);
+                callback(tabid, ret);
             });
         } catch (e) {
             console.log(e);
