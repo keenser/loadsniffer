@@ -10,8 +10,11 @@ class AioDispatcher:
     """simple asyncio send/notify module"""
 
     def __init__(self, loop=None):
-        self.loop = loop or asyncio.get_event_loop()
+        self._loop = loop or asyncio.get_event_loop()
         self._pool = {}
+
+    def loop(self, loop):
+        self._loop = loop
 
     def connect(self, signal, callback):
         """actual callback connect to signal"""
@@ -29,7 +32,7 @@ class AioDispatcher:
         """actual trigger connected to signal callbacks"""
         if signal in self._pool:
             for callback in self._pool[signal]:
-                self.loop.create_task(callback(*args, **kwargs))
+                self._loop.create_task(callback(*args, **kwargs))
 
 
 global _global_dispatcher
@@ -49,3 +52,7 @@ def disconnect(signal, callback):
 def send(signal, *args, **kwargs):
     """trigger connected to signal callbacks"""
     _global_dispatcher.send(signal, *args, **kwargs)
+
+def loop(loop):
+    """change asyncio loop"""
+    _global_dispatcher.loop(loop)

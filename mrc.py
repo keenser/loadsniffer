@@ -5,6 +5,7 @@
 # Media Renderer control server
 
 import asyncio
+import uvloop
 import json
 import urllib.parse
 import os.path
@@ -455,7 +456,9 @@ async def rootindex(app, handler):
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.get_event_loop()
+    aioupnp.notify.loop(loop)
 
     def exception_handler(loop, context):
         logging.error('exception_handler: %s', context)
