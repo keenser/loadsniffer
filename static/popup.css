@@ -29,6 +29,8 @@ span {
     padding-right: 10px;
     margin: 1px;
     cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .content div {
@@ -52,14 +54,21 @@ span {
 
 .content div span:first-child {
     width: 100%;
-    overflow: hidden;
-    white-space: nowrap;
+/*    overflow: hidden; */
+/*    white-space: nowrap; */
     background: transparent;
 }
 
 .index {
     margin: 8px;
     max-width: 1024px;
+    font-size: larger;
+}
+@media only screen and (max-width: 1024px) {
+  /* For mobile phones: */
+  .index {
+    font-size: 200%;
+  }
 }
 
 .index_plugin {
@@ -71,7 +80,7 @@ span {
 }
 
 .input {
-    height: 30px;
+    height: 40px;
     line-height: 20px;
     padding: 3px 0.5em;
     border: solid 1px;
@@ -85,6 +94,8 @@ span {
 .torrent span {
     display: block;
     transition: 0.2s;
+/*    overflow: hidden; */
+/*    white-space: nowrap; */
 }
 
 .torrent span:hover {
@@ -97,6 +108,8 @@ span {
 
 .torrent div:first-child span:first-child {
     width: 100%;
+/*    overflow: hidden; */
+/*    white-space: nowrap; */
 }
 
 .active {
@@ -121,6 +134,6 @@ span {
 .control span {
     padding-left: 5px;
     padding-right: 5px;
-    overflow: hidden;
-    white-space: nowrap;
+/*    overflow: hidden; */
+/*    white-space: nowrap; */
 }
