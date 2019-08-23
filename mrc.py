@@ -22,6 +22,8 @@ import aiohttp.client_exceptions
 import aioupnp
 import torrentstream
 from typing import Optional
+from io import StringIO
+import contextlib
 
 have_youtube_dl = False
 try:
@@ -453,6 +455,14 @@ async def rootindex(app, handler):
         return await handler(request)
     return index_handler
 
+@contextlib.contextmanager
+def stdoutIO(stdout=None):
+    old = sys.stdout
+    if stdout is None:
+        stdout = StringIO()
+    sys.stdout = stdout
+    yield stdout
+    sys.stdout = old
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
@@ -497,12 +507,33 @@ def main():
     for sock in site._server.sockets:
         sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 160)
 
+    class console(asyncio.Protocol):
+        def __init__(self):
+            super().__init__()
+            self.transport = None
+            self.torrent = torrent
+
+        def connection_made(self, transport):
+            self.transport = transport
+
+        def data_received(self, data):
+            with stdoutIO() as s:
+                try:
+                    exec(data)
+                except Exception as e:
+                    self.transport.write('{}\n'.format(e).encode())
+                self.transport.write('{}\n'.format(s.getvalue()).encode())
+
+    cons = loop.run_until_complete(loop.create_server(console, '127.0.0.1', 8888))
+
     try:
         loop.run_forever()
     except KeyboardInterrupt:
         pass
     finally:
         loop.run_until_complete(runner.cleanup())
+        cons.close()
+        loop.run_until_complete(cons.wait_closed())
         loop.close()
 
 
