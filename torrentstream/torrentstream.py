@@ -454,6 +454,17 @@ class TorrentStream:
                 directory.append(data)
         return sorted(directory, key=lambda data: data['title'])
 
+    def recheck(self, info_hash):
+        """recheck torrent"""
+        try:
+            handle = self.session.find_torrent(libtorrent.sha1_hash(binascii.unhexlify(info_hash)))
+            handle.force_recheck()
+            return {'status': '{} recheck'.format(info_hash)}
+            #if handle.is_valid():
+        except TypeError:
+            return {'error': '{} incorrect hash'.format(info_hash)}
+        return {'error': '{} not found'.format(info_hash)}
+
     def status(self):
         """dump torrent status"""
         def space_break(string, length):
@@ -536,6 +547,8 @@ class TorrentStream:
             ret = self.pause_torrent(url)
         elif action == 'flush':
             ret = self.flush_torrent()
+        elif action == 'recheck':
+            ret = self.recheck(url)
         else:
             if action not in self._files_list:
                 ret = help()

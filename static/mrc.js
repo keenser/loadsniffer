@@ -277,6 +277,22 @@ var UpdateBTStatus = function(data) {
     for (let i = 0; i < data.length; i++) {
         let title = document.createElement("span");
         title.textContent = data[i].title;
+
+        let recheck = document.createElement("span");
+        recheck.textContent = '⟳';
+        recheck.title = 'Recheck ' + data[i].title;
+        recheck.addEventListener('click',
+        function(e) {
+            if (sendMessage !== undefined) {
+                sendMessage({
+                    action: "recheck",
+                    request: {
+                        url: data[i].info_hash
+                    }
+                });
+            }
+        });
+
         let remove = document.createElement("span");
         remove.textContent = '×';
         remove.title = 'Remove ' + data[i].title;
@@ -309,6 +325,7 @@ var UpdateBTStatus = function(data) {
         let head = document.createElement("div");
         head.appendChild(title);
         head.appendChild(load);
+        head.appendChild(recheck);
         head.appendChild(remove);
 
         let files = document.createElement("div");

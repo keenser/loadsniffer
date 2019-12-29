@@ -446,6 +446,9 @@ class WebSocketFactory:
         elif action == 'upnpstatus':
             message = self.upnp.device.status if self.upnp.device else None
             await self.sendMessage(message)
+        elif action == 'recheck':
+            info_hash = data.get('url')
+            self.torrent.recheck(info_hash)
 
 
 async def rootindex(app, handler):
