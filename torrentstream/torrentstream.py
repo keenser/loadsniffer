@@ -472,12 +472,12 @@ class TorrentStream:
         status = {}
         sst = self.session.status()
         status['version'] = libtorrent.version
-        status['dht_nodes'] = sst.dht_nodes
+        #status['dht_nodes'] = sst.dht_nodes
         cst = self.session.get_cache_status()
-        status['cache_size'] = cst.cache_size
-        status['reads'] = cst.reads
-        status['writes'] = cst.writes
-        status['read_cache_size'] = cst.read_cache_size
+        #status['cache_size'] = cst.cache_size
+        #status['reads'] = cst.reads
+        #status['writes'] = cst.writes
+        #status['read_cache_size'] = cst.read_cache_size
         for handle in self.session.get_torrents():
             info_hash = str(handle.info_hash())
             s = {}
@@ -494,7 +494,7 @@ class TorrentStream:
                     file_map += str(handle.file_priority(file_index))
                 s['files'] = file_map
                 s['name'] = handle.get_torrent_info().name()
-            s['has_metadata'] = handle.has_metadata()
+            #s['has_metadata'] = handle.has_metadata()
             st = handle.status()
             s['paused'] = st.paused
             s['state'] = st.state
@@ -503,11 +503,11 @@ class TorrentStream:
             s['download_rate'] = st.download_rate
             s['upload_rate'] = st.upload_rate
             s['num_seeds'] = st.num_seeds
-            s['num_complete'] = st.num_complete
+            #s['num_complete'] = st.num_complete
             s['num_peers'] = st.num_peers
-            s['num_incomplete'] = st.num_incomplete
-            s['trackers'] = handle.trackers()
-            s['upload_mode'] = st.upload_mode
+            #s['num_incomplete'] = st.num_incomplete
+            #s['trackers'] = handle.trackers()
+            #s['upload_mode'] = st.upload_mode
             status[info_hash] = s
         return status
 
