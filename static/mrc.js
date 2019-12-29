@@ -131,6 +131,14 @@ var fetchSimilarHeaders = function(url, callback) {
     request.send(null);
 }
 
+var vlcurl = function(url) {
+    switch (navigator.platform) {
+        case "iPad":
+            return "vlc-x-callback://x-callback-url/stream?url=" + encodeURIComponent(url);
+	default:
+            return "vlc://" + url;
+    }
+}
 var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
     let span = document.createElement("span");
     let relativeurl = url;
@@ -162,6 +170,18 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
                 video.setAttribute('src', relativeurl);
                 video.setAttribute('type', headers['content-type']);
             });
+        }
+        let vlc = document.getElementById("vlcurl")
+        if(vlc !== undefined) {
+                vlccallback = vlcurl(relativeurl);
+                vlc.setAttribute('href', vlccallback);
+                vlc.textContent = textcontent;
+                vlc.addEventListener('click',
+                function(e) {
+                    if(video !== undefined) {
+                        video.pause();
+                    }
+                });
         }
     });
     line.appendChild(span);
@@ -307,6 +327,7 @@ var UpdateBTStatus = function(data) {
                 });
             }
         });
+
         let load = document.createElement("span");
 	load.textContent = '⇩';
         load.title = 'Download all files from ' + data[i].title;

@@ -409,6 +409,7 @@ class TorrentStream:
         except TypeError:
             return {'error': '{} incorrect hash'.format(info_hash)}
         return {'error': '{} not found'.format(info_hash)}
+
     def pause_torrent(self, info_hash):
         """pause/resume torrent"""
         try:
