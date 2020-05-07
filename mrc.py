@@ -29,7 +29,7 @@ have_youtube_dl = False
 try:
     import youtube_dl
     # delete generic extractor
-    youtube_dl.extractor._ALL_CLASSES.pop()
+    youtube_dl.extractor.gen_extractor_classes().pop()
     have_youtube_dl = True
 except ModuleNotFoundError:
     pass
