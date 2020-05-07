@@ -412,8 +412,8 @@ class WebSocketFactory:
 
             async def bittorrent():
                 def remove_handlers():
-                    self.torrent.remove_alert_handler('torrent_error_alert', torrent_error_alert)
-                    self.torrent.remove_alert_handler('tracker_announce_alert', tracker_announce_alert)
+                    self.torrent.remove_alert_handler('torrent_error', torrent_error_alert)
+                    self.torrent.remove_alert_handler('tracker_announce', tracker_announce_alert)
 
                 async def torrent_error_alert(alert):
                     self.log.info('torrent_error_alert %s', request)
@@ -425,8 +425,8 @@ class WebSocketFactory:
                     remove_handlers()
 
                 if self.torrent.add_torrent(url):
-                    self.torrent.add_alert_handler('torrent_error_alert', torrent_error_alert)
-                    self.torrent.add_alert_handler('tracker_announce_alert', tracker_announce_alert)
+                    self.torrent.add_alert_handler('torrent_error', torrent_error_alert)
+                    self.torrent.add_alert_handler('tracker_announce', tracker_announce_alert)
                 else:
                     await self.sendMessage(None)
 
