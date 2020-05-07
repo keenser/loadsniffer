@@ -17,7 +17,7 @@ body {
 }
 
 h1 {
-    font-size: 14px;
+    /*font-size: 14px;*/
     color: #888888;
     font-weight: normal;
     font-family: Helvetica, Arial, sans-serif;
@@ -66,12 +66,12 @@ span {
 .index {
     margin: 8px;
     max-width: 1024px;
-    font-size: larger;
+    font-size: 1em;
 }
 @media only screen and (max-width: 1024px) {
   /* For mobile phones: */
   .index {
-    font-size: 200%;
+    font-size: 2rem;
   }
 }
 
