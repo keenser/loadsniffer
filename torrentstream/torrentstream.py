@@ -41,7 +41,6 @@ class DynamicTorrentProducer:
         self.request.resume()
 
     def _piece_finished_alert(self, alert):
-        self.log.debug("piece_finished_alert")
         self._slide()
         self.request.resume()
 
@@ -227,7 +226,8 @@ class TorrentStream:
         session.set_alert_mask(
             libtorrent.alert.category_t.tracker_notification |
             libtorrent.alert.category_t.storage_notification |
-            libtorrent.alert.category_t.progress_notification |
+            libtorrent.alert.category_t.piece_progress_notification |
+            libtorrent.alert.category_t.file_progress_notification |
             libtorrent.alert.category_t.status_notification |
             libtorrent.alert.category_t.error_notification
             )
@@ -235,7 +235,6 @@ class TorrentStream:
         session.start_lsd()
         session.start_upnp()
         session.start_natpmp()
-        session.listen_on(options.get('min_port', 6881), options.get('max_port', 6889), interface=options.get('interface'))
 
         session_settings = session.get_settings()
         session_settings['strict_end_game_mode'] = False
@@ -265,7 +264,6 @@ class TorrentStream:
             self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_added_alert(alert):
-            self.log.debug('get_torrent_info %s', alert.handle.get_torrent_info())
             if alert.handle.get_torrent_info():
                 metadata_received_alert(alert)
 
@@ -283,10 +281,13 @@ class TorrentStream:
             self.session.remove_torrent(alert.handle)
 
         def torrent_finished_alert(alert):
-            self.save_resume_data(alert.handle)
+            self._save_resume_data(alert.handle)
 
         def file_completed_alert(alert):
-            self.save_resume_data(alert.handle)
+            alert.handle.flush_cache()
+
+        def cache_flushed_alert(alert):
+            self._save_resume_data(alert.handle)
 
         async def save_resume_data(fn, fc):
             try:
@@ -306,12 +307,11 @@ class TorrentStream:
         self.add_alert_handler('torrent_checked', torrent_checked_alert)
         self.add_alert_handler('torrent_deleted', torrent_removed_alert)
         self.add_alert_handler('torrent_error', torrent_error_alert)
-        self.add_alert_handler('torrent_finished', torrent_finished_alert)
+        #self.add_alert_handler('torrent_finished', torrent_finished_alert)
         self.add_alert_handler('file_completed', file_completed_alert)
+        self.add_alert_handler('cache_flushed', cache_flushed_alert)
         self.add_alert_handler('save_resume_data', save_resume_data_alert)
         self.add_alert_handler('tracker_announce', tracker_announce_alert)
-
-        session.set_alert_notify(self._handle_alert)
 
         for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
             try:
@@ -321,16 +321,26 @@ class TorrentStream:
             except (IOError, EOFError, RuntimeError) as exception:
                 self.log.error("Unable to load fastresume %s", exception)
 
+    def notify_loop(self):
+        self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
+        #session.set_alert_notify(self._handle_alert)
+
+    def _alert_queue_loop(self):
+        self.log.debug("enter to _alert_queue_loop")
+        while not self.queue_event.is_set():
+            if self.session.wait_for_alert(1000):
+                self.loop.call_soon_threadsafe(self._handle_alert)
+
     def _handle_alert(self, alerts=None):
         if not alerts:
             alerts = self.session.pop_alerts()
 
         for alert in alerts:
-            if alert.what() not in ['block_finished', 'block_downloading', 'block_uploaded', 'block_timeout']:
-                try:
-                    self.log.debug('%s: %s', alert.what(), alert.message())
-                except:
-                    self.log.debug('%s', alert.what())
+            try:
+                self.log.debug('%s: %s', alert.what(), alert.message())
+            except:
+                self.log.debug('%s', alert.what())
+
             if hasattr(alert, 'handle'):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
                 for handler in self._alert_handlers.get(what, []):
@@ -345,12 +355,9 @@ class TorrentStream:
                     else:
                         handler(alert)
 
-    def save_resume_data(self, handle):
+    def _save_resume_data(self, handle):
         if handle.is_valid() and handle.has_metadata() and handle.need_save_resume_data():
-            # flush_disk_cache
-            # save_info_dict
-            # only_if_modified
-            handle.save_resume_data(libtorrent.save_resume_flags_t.flush_disk_cache<<1 | libtorrent.save_resume_flags_t.flush_disk_cache<<2)
+            handle.save_resume_data(libtorrent.save_resume_flags_t.save_info_dict | libtorrent.save_resume_flags_t.only_if_modified)
 
     def add_alert_handler(self, alert, handler, handle=None):
         """register new callback on specific alert and optional on specific torrent handle"""
@@ -474,7 +481,8 @@ class TorrentStream:
     def status(self):
         """dump torrent status"""
         def space_break(string, length):
-            return ' '.join(string[i:i+length] for i in range(0, len(string), length))
+            string = [str(i) for i in string]
+            return ' '.join(''.join(string[i:i+length]) for i in range(0, len(string), length))
         status = {}
         status['version'] = libtorrent.version
 
@@ -483,12 +491,11 @@ class TorrentStream:
             s = {}
             if handle.has_metadata():
                 torrent_info = handle.get_torrent_info()
-                piece_map = ''
+                piece_map = handle.get_piece_priorities()
                 for piece_index in range(torrent_info.num_pieces()):
                     if handle.have_piece(piece_index):
-                        piece_map += '*'
-                    else:
-                        piece_map += str(handle.piece_priority(piece_index))
+                        piece_map[piece_index] = '*'
+
                 s['pieces'] = space_break(piece_map, 100)
                 #file_map = ''
                 #for file_index in range(torrent_info.num_files()):
@@ -508,9 +515,8 @@ class TorrentStream:
         return status
 
     async def shutdown(self, app):
-        #self.queue_event.set()
-        #await asyncio.wait([self.queue_loop])
-        #self._handle_alert()
+        self.queue_event.set()
+        await asyncio.wait([self.queue_loop])
         del self.session
         self.log.info("shutdown done")
 

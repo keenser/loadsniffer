@@ -411,22 +411,15 @@ class WebSocketFactory:
             self.log.info('add %s', url)
 
             async def bittorrent():
-                def remove_handlers():
-                    self.torrent.remove_alert_handler('torrent_error', torrent_error_alert)
-                    self.torrent.remove_alert_handler('tracker_announce', tracker_announce_alert)
-
-                async def torrent_error_alert(alert):
-                    self.log.info('torrent_error_alert %s', request)
-                    await self.sendMessage(None, request)
-                    remove_handlers()
-
-                async def tracker_announce_alert(alert):
-                    await self.sendMessage('done', request)
-                    remove_handlers()
+                def add_torrent_alert(alert):
+                    message = None
+                    if alert.error.value() == 0:
+                        message = 'done'
+                    self.torrent.remove_alert_handler('add_torrent', add_torrent_alert)
+                    self.factory.loop.create_task(self.sendMessage(message, request))
 
                 if self.torrent.add_torrent(url):
-                    self.torrent.add_alert_handler('torrent_error', torrent_error_alert)
-                    self.torrent.add_alert_handler('tracker_announce', tracker_announce_alert)
+                    self.torrent.add_alert_handler('add_torrent', add_torrent_alert)
                 else:
                     await self.sendMessage(None)
 
@@ -528,6 +521,7 @@ def main():
                 self.transport.write('{}\n'.format(s.getvalue()).encode())
 
     cons = loop.run_until_complete(loop.create_server(console, '127.0.0.1', 8888))
+    torrent.notify_loop()
 
     try:
         loop.run_forever()
