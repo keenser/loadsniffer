@@ -141,14 +141,14 @@ class SSDPServer:
         mcast = self.loop.create_datagram_endpoint(
             lambda: SSDPMcastProtocol(self),
             local_addr=(SSDP_ADDR, SSDP_PORT), family=socket.AF_INET,
-            reuse_address=True, reuse_port=True,
+            reuse_port=True,
         )
         self.mtransport, self.mcastprotocol = self.loop.run_until_complete(mcast)
 
         ucast = self.loop.create_datagram_endpoint(
             lambda: SSDPProtocol(self),
             family=socket.AF_INET, proto=socket.IPPROTO_UDP,
-            reuse_address=True, reuse_port=True,
+            reuse_port=True,
         )
         self.transport, self.ucastprotocol = self.loop.run_until_complete(ucast)
 
