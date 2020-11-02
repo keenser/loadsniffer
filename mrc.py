@@ -461,7 +461,11 @@ def stdoutIO(stdout=None):
     sys.stdout = old
 
 def main():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
+    if 'JOURNAL_STREAM' in os.environ:
+        logformat = '%(levelname)s:%(name)s: %(message)s'
+    else:
+        logformat = '%(asctime)s %(levelname)s:%(name)s: %(message)s'
+    logging.basicConfig(level=logging.INFO, format=logformat)
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.get_event_loop()
     aioupnp.notify.loop(loop)
@@ -530,7 +534,9 @@ def main():
     finally:
         loop.run_until_complete(runner.cleanup())
         cons.close()
-        loop.run_until_complete(cons.wait_closed())
+        tasks = asyncio.all_tasks(loop)
+        expensive_tasks = {task for task in tasks if not task.done()}
+        loop.run_until_complete(asyncio.gather(*expensive_tasks))
         loop.close()
 
 
