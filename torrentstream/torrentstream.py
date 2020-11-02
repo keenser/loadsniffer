@@ -258,9 +258,9 @@ class TorrentStream:
 
         def metadata_received_alert(alert):
             self.log.info('got %d files', alert.handle.get_torrent_info().num_files())
-            for i in range(alert.handle.get_torrent_info().num_files()):
-                info = alert.handle.get_torrent_info().file_at(i)
-                self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
+            #for i in range(alert.handle.get_torrent_info().num_files()):
+            #    info = alert.handle.get_torrent_info().file_at(i)
+            #    self._files_list[info.path] = FileInfo(id=i, handle=alert.handle, info=info)
             self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_added_alert(alert):
@@ -272,9 +272,9 @@ class TorrentStream:
 
         def torrent_removed_alert(alert):
             info_hash = str(alert.handle.info_hash())
-            for path, handle in dict(self._files_list).items():
-                if str(handle.handle.info_hash()) == info_hash:
-                    del self._files_list[path]
+            #for path, handle in dict(self._files_list).items():
+            #    if str(handle.handle.info_hash()) == info_hash:
+            #        del self._files_list[path]
             self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_error_alert(alert):
@@ -450,6 +450,7 @@ class TorrentStream:
     def list_files(self):
         """list available files in torrents"""
         directory = []
+        files_list = {}
         for handle in self.session.get_torrents():
             if handle.is_valid():
                 data = {
@@ -459,12 +460,15 @@ class TorrentStream:
                 ti = handle.get_torrent_info()
                 if ti:
                     data['title'] = ti.name()
-                    for file in handle.get_torrent_info().files():
+                    for num in range(ti.num_files()):
+                        file = ti.file_at(num)
                         data['files'].append(file.path)
+                        files_list[file.path] = FileInfo(id=num, handle=handle, info=file)
                     data['files'].sort()
                 else:
                     data['title'] = str(handle.info_hash())
                 directory.append(data)
+        self._files_list = files_list
         return sorted(directory, key=lambda data: data['title'])
 
     def recheck(self, info_hash):
