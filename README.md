@@ -38,3 +38,4 @@ Example:
    $ curl localhost:9999/bt/rm?url=f84b51f0d2c3455ab5dabb6643b4340234cd036e
    
    {"status": "f84b51f0d2c3455ab5dabb6643b4340234cd036e removed"}
+
