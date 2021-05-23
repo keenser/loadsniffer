@@ -18,7 +18,7 @@ function save_options() {
 function restore_options() {
   // Use default value color = 'red' and likesColor = true.
   chrome.storage.sync.get({
-    mrcserver: 'ws://localhost:8883/ws'
+    mrcserver: 'http://localhost:8883'
   }, function(items) {
     document.getElementById('mrc').value = items.mrcserver;
   });
