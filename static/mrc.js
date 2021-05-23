@@ -131,10 +131,16 @@ var fetchSimilarHeaders = function(url, callback) {
     request.send(null);
 }
 
-var vlcurl = function(url) {
+var vlcurl = function(url, type) {
     switch (navigator.platform) {
         case "iPad":
             return "vlc-x-callback://x-callback-url/stream?url=" + encodeURIComponent(url);
+            break;
+        case "Linux armv7l":
+        case "Linux armv8l":
+        case "Linux aarch64":
+            return "intent://" + url.host + url.pathname + "#Intent;action=android.intent.action.VIEW;scheme=" + url.protocol.slice(0, -1) + ";type=" + type + ";end";
+            break;
 	default:
             return "vlc://" + url;
     }
@@ -173,7 +179,8 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
         }
         let vlc = document.getElementById("vlcurl")
         if(vlc !== undefined) {
-                vlccallback = vlcurl(relativeurl);
+            fetchSimilarHeaders(url, function(headers) {
+                vlccallback = vlcurl(relativeurl, headers['content-type']);
                 vlc.setAttribute('href', vlccallback);
                 vlc.textContent = textcontent;
                 vlc.addEventListener('click',
@@ -182,6 +189,7 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
                         video.pause();
                     }
                 });
+            });
         }
     });
     line.appendChild(span);
