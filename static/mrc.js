@@ -94,6 +94,22 @@ var onStartupOrOnInstalledListener = function() {
         console.log('mrc disconnected');
         UpdateUPNPStatus(null);
     });
+
+    document.addEventListener('keydown', function(e) {
+        let video = document.getElementById("video");
+        if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && video.src) {
+            switch(e.keyCode){
+                case 70:
+                    if(document.fullscreenElement) {
+                         document.exitFullscreen();
+                    } else {
+                         video.requestFullscreen();
+                         video.focus();
+                    }
+                    break;
+            }
+        }
+    }, false);
 }
 var copyToClipboard = function (str) {
     document.oncopy = function(event) {
@@ -170,14 +186,15 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
             });
 	}
         copyToClipboard(relativeurl);
-        let video = document.getElementById("video")
+        let video = document.getElementById("video");
         if(video !== undefined && video.className === 'active') {
             fetchSimilarHeaders(url, function(headers) {
                 video.setAttribute('src', relativeurl);
                 video.setAttribute('type', headers['content-type']);
             });
+            video.focus();
         }
-        let vlc = document.getElementById("vlcurl")
+        let vlc = document.getElementById("vlcurl");
         if(vlc !== undefined) {
             fetchSimilarHeaders(url, function(headers) {
                 vlccallback = vlcurl(relativeurl, headers['content-type']);
