@@ -75,6 +75,8 @@ var mrc = new MRCServer(urlcfg, function(message) {
         UpdateBTStatus(message.response);
     } else if (message.action == 'upnpstatus') {
         UpdateUPNPStatus(message.response);
+    } else if (message.action == 'progressupdate') {
+        UpdateProgress(message.response);
     }
 });
 
@@ -161,8 +163,9 @@ var vlcurl = function(url, type) {
             return "vlc://" + url;
     }
 }
-var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
+var addSingleLink = function(line, textcontent, url, title, cookie, localurl, id, progress) {
     let span = document.createElement("span");
+    let progress_span = document.createElement("span");
     let relativeurl = url;
     let relative = false;
 
@@ -171,7 +174,12 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
         relativeurl = new URL(url, localurl);
     }
 
+    progress_span.style.width = progress + '%';
+    if (id) {
+        progress_span.id = 'progress_' + id;
+    }
     span.textContent = textcontent;
+    span.className = 'title';
     span.title = relativeurl;
     span.addEventListener('click', function(e) {
 	if (sendMessage !== undefined) {
@@ -209,15 +217,16 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl) {
             });
         }
     });
+    span.appendChild(progress_span);
     line.appendChild(span);
 }
 var addLine = function(container, linkSource) {
     let line = document.createElement("div");
     let textcontent = linkSource.src + ': ' + linkSource.title || linkSource.url;
-    addSingleLink(line, textcontent, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie, null);
+    addSingleLink(line, textcontent, linkSource.url, linkSource.title || linkSource.url, linkSource.cookie, null, null, 0);
     if (linkSource.bitrate !== undefined) {
         for (let i = 0; i < linkSource.bitrate.length; i++) {
-            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie, null);
+            addSingleLink(line, linkSource.bitrate[i].bitrate || i + 1, linkSource.bitrate[i].url, linkSource.title || linkSource.url, linkSource.bitrate[i].cookie, null, null, 0);
         }
     }
     container.insertBefore(line, container.firstChild);
@@ -376,7 +385,7 @@ var UpdateBTStatus = function(data) {
 
         let files = document.createElement("div");
         for (let f = 0; f < data[i].files.length; f++) {
-            addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null, localurl);
+            addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null, localurl, data[i].info_hash + '_' + data[i].files[f].id, data[i].files[f].progress);
         }
         if (bthiddenlist[data[i].info_hash] !== undefined) {
             files.className = bthiddenlist[data[i].info_hash];
@@ -399,10 +408,22 @@ var UpdateBTStatus = function(data) {
         });
         let torrent = document.createElement("div");
         torrent.className = 'torrent';
+        torrent.id = data[i].info_hash;
         torrent.appendChild(head);
         torrent.appendChild(files);
         container.appendChild(torrent);
     }
     bthiddenlist = hiddenlist;
     });
+}
+
+var UpdateProgress = function(data) {
+    for (let info_hash in data) {
+        for(let num in data[info_hash]) {
+            let progress = document.getElementById('progress_' + info_hash + '_' + num);
+            if (progress) {
+                progress.style.width = data[info_hash][num] + '%';
+            }
+        }
+    }
 }

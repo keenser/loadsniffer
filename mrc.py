@@ -149,9 +149,10 @@ class UPnPctrl:
                 try:
                     elt = aioupnp.dlna.didl.fromString(variable.value)
                     self.mediadevices[usn].status['item'] = []
-                    self.log.info('now playing: %s %s', elt['DIDL-Lite']['item']['dc:title'], elt['DIDL-Lite']['item']['@id'])
+                    url = elt['DIDL-Lite']['item'].get('res', {}).get('#text') or elt['DIDL-Lite']['item']['@id']
+                    self.log.info('now playing: %s %s', elt['DIDL-Lite']['item']['dc:title'], url)
                     self.mediadevices[usn].status['item'].append({
-                        'url':   elt['DIDL-Lite']['item']['@id'],
+                        'url':   url,
                         'title': elt['DIDL-Lite']['item']['dc:title']
                     })
                     #for item in elt.getItems():
@@ -329,7 +330,7 @@ class WebSocketFactory:
     def videofiles(files):
         ret = []
         for i in files:
-            mime = mimetypes.guess_type(i, strict=False)[0]
+            mime = mimetypes.guess_type(i['path'], strict=False)[0]
             if mime and mime.startswith('video'):
                 ret.append(i)
         return ret
@@ -341,12 +342,14 @@ class WebSocketFactory:
             data['info_hash'] = handle['info_hash']
             data['title'] = handle['title']
             data['files'] = [{
-                'title': os.path.basename(i),
+                'title': os.path.basename(i['path']),
                 'url':
                     urllib.parse.urljoin(
                         self.torrent.options.get('urlpath'),
-                        urllib.parse.quote(i)
-                    )
+                        urllib.parse.quote(i['path'])
+                    ),
+                'id': i['id'],
+                'progress': i['progress'],
                 } for i in self.videofiles(handle['files'])]
             response.append(data)
         return response
@@ -357,17 +360,22 @@ class WebSocketFactory:
     async def _upnpupdate(self, message):
         await self.sendMessage(message, {'action': 'upnpstatus'})
 
+    async def _progressupdate(self, alert):
+        await self.sendMessage(alert.progress, {'action': 'progressupdate'})
+
     async def onOpen(self):
         self.log.info('WS client connected %s %s', self.peer, self.local)
         self.factory.wsclients.add(self)
         self.upnp.add_alert_handler(self._upnpupdate)
         self.torrent.add_alert_handler('files_list_update_alert', self._btupdate)
+        self.torrent.add_alert_handler('progress_update_alert', self._progressupdate)
 
     def onClose(self):
         self.log.info('WS client closed %s %s', self.peer, self.local)
         self.factory.wsclients.discard(self)
         self.upnp.remove_alert_handler(self._upnpupdate)
         self.torrent.remove_alert_handler('files_list_update_alert', self._btupdate)
+        self.torrent.remove_alert_handler('progress_update_alert', self._progressupdate)
 
     async def onShutdown(self, app):
         for wsclient in set(self.wsclients):

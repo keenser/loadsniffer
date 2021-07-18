@@ -200,6 +200,20 @@ class FilesListUpdateAlert:
         return self._message.format(len(self.files))
 
 
+class ProgressUpdateAlert:
+    """custom libtorrent alert called from TorrentStream"""
+    _what = 'progress_update_alert'
+    _message = '{} updated'
+
+    def __init__(self, progress):
+        self.progress = progress
+
+    def what(self):
+        return self._what
+
+    def message(self):
+        return self._message.format(len(self.progress))
+
 class TorrentStream:
     """Main class"""
     PAUSE = 0
@@ -302,6 +316,18 @@ class TorrentStream:
             fc = libtorrent.write_resume_data_buf(alert.params)
             self.loop.create_task(save_resume_data(fn, fc))
 
+        def piece_finished_alert(alert):
+            directory = {}
+            ti = alert.handle.get_torrent_info()
+            data = {}
+            progress = alert.handle.file_progress()
+            for num in range(ti.num_files()):
+                file = ti.file_at(num)
+                data[num] = progress[num] / file.size * 100.0
+            directory[str(alert.handle.info_hash())] = data
+
+            self._handle_alert([ProgressUpdateAlert(directory)])
+
         self.add_alert_handler('torrent_added', torrent_added_alert)
         self.add_alert_handler('metadata_received', metadata_received_alert)
         self.add_alert_handler('torrent_checked', torrent_checked_alert)
@@ -312,6 +338,7 @@ class TorrentStream:
         self.add_alert_handler('cache_flushed', cache_flushed_alert)
         self.add_alert_handler('save_resume_data', save_resume_data_alert)
         self.add_alert_handler('tracker_announce', tracker_announce_alert)
+        self.add_alert_handler('piece_finished', piece_finished_alert)
 
         for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
             try:
@@ -459,12 +486,13 @@ class TorrentStream:
                 }
                 ti = handle.get_torrent_info()
                 if ti:
+                    progress = handle.file_progress()
                     data['title'] = ti.name()
                     for num in range(ti.num_files()):
                         file = ti.file_at(num)
-                        data['files'].append(file.path)
+                        data['files'].append({'path':file.path, 'id': num, 'progress': progress[num]/file.size * 100.0})
                         files_list[file.path] = FileInfo(id=num, handle=handle, info=file)
-                    data['files'].sort()
+                    data['files'].sort(key=lambda data: data['path'])
                 else:
                     data['title'] = str(handle.info_hash())
                 directory.append(data)
