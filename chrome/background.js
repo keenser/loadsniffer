@@ -195,6 +195,13 @@ var UpdateUPNPStatus = function(data) {
         response: upnpstatus
     });
 }
+var UpdateProgress = function(data) {
+    console.log('UpdateProgress', data);
+    chrome.extension.sendMessage({
+        action: 'progressupdate',
+        response: data
+    });
+}
 var UpdateTabLib = function(id, data) {
     urllib[id] = urllib[id] || []
     if (typeof(data) === 'object' && data) {

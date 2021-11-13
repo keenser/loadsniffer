@@ -25,5 +25,7 @@ chrome.extension.onMessage.addListener(function(message, sender) {
         UpdateUPNPStatus(message.response);
     } else if (message.action === 'btstatus') {
         UpdateBTStatus(message.response);
+    } else if (message.action == 'progressupdate') {
+        UpdateProgress(message.response);
     }
 });

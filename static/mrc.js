@@ -315,7 +315,7 @@ var UpdateUPNPStatus = function(data) {
     }
     else {
         let video = document.getElementById("video")
-        if(video !== undefined) {
+        if(video !== undefined && video !== null) {
             video.className = 'active';
         }
     }
