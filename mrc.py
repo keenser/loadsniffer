@@ -336,23 +336,13 @@ class WebSocketFactory:
         return ret
 
     def btfileslist(self, infiles):
-        response = []
         for handle in infiles:
-            data = {}
-            data['info_hash'] = handle['info_hash']
-            data['title'] = handle['title']
-            data['files'] = [{
-                'title': os.path.basename(i['path']),
-                'url':
-                    urllib.parse.urljoin(
-                        self.torrent.options.get('urlpath'),
-                        urllib.parse.quote(i['path'])
-                    ),
-                'id': i['id'],
-                'progress': i['progress'],
-                } for i in self.videofiles(handle['files'])]
-            response.append(data)
-        return response
+            for i in self.videofiles(handle['files']):
+                i['title'] = os.path.basename(i['path'])
+                i['url'] = urllib.parse.urljoin(
+                                self.torrent.options.get('urlpath'),
+                                urllib.parse.quote(i['path']))
+        return infiles
 
     async def _btupdate(self, alert):
         await self.sendMessage(self.btfileslist(alert.files), {'action': 'btstatus'})

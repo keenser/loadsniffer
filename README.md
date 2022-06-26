@@ -23,7 +23,7 @@ Uses libtorrent and aiohttp to stream files inside torrents over http. Can be us
 
 Example:
 
-   $ torrentstream.py &
+   $ python3 -m torrentstream &
 
    $ curl localhost:9999/bt/add?url=http%3A%2F%2Fwww.frostclick.com%2Ftorrents%2Fvideo%2Fanimation%2FBig_Buck_Bunny_1080p_surround_frostclick.com_frostwire.com.torrent
 

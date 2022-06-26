@@ -324,6 +324,8 @@ class TorrentStream:
             for num in range(ti.num_files()):
                 file = ti.file_at(num)
                 data[num] = progress[num] / file.size * 100.0
+
+            data['progress'] = alert.handle.status().progress * 100.0
             directory[str(alert.handle.info_hash())] = data
 
             self._handle_alert([ProgressUpdateAlert(directory)])
@@ -349,8 +351,8 @@ class TorrentStream:
                 self.log.error("Unable to load fastresume %s", exception)
 
     def notify_loop(self):
-        self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
-        #session.set_alert_notify(self._handle_alert)
+        #self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
+        self.session.set_alert_notify(self._handle_alert)
 
     def _alert_queue_loop(self):
         self.log.debug("enter to _alert_queue_loop")
@@ -482,15 +484,21 @@ class TorrentStream:
             if handle.is_valid():
                 data = {
                     'info_hash': str(handle.info_hash()),
-                    'files': []
+                    'files': [],
+                    'progress': handle.status().progress * 100.0,
                 }
                 ti = handle.get_torrent_info()
                 if ti:
-                    progress = handle.file_progress()
+                    # fix SIGSEGV
+                    progress = handle.file_progress() if handle.status().progress else None
                     data['title'] = ti.name()
                     for num in range(ti.num_files()):
                         file = ti.file_at(num)
-                        data['files'].append({'path':file.path, 'id': num, 'progress': progress[num]/file.size * 100.0})
+                        data['files'].append({
+                            'path':file.path,
+                            'id': num,
+                            'progress': progress[num]/file.size * 100.0 if progress else 0
+                        })
                         files_list[file.path] = FileInfo(id=num, handle=handle, info=file)
                     data['files'].sort(key=lambda data: data['path'])
                 else:
