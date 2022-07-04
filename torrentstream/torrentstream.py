@@ -16,6 +16,7 @@ import binascii
 import aiofiles
 from aiohttp import web
 import libtorrent
+import socket
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
@@ -228,7 +229,6 @@ class TorrentStream:
         self.options = options
         self.options.setdefault('save_path', '/tmp/')
         self.loop = options.get('loop', asyncio.get_event_loop())
-        self.queue_event = asyncio.Event()
 
         self.http = web.Application()
         self.http.router.add_get('/{action:.*}', self.render_GET)
@@ -237,14 +237,6 @@ class TorrentStream:
         self.log.info("libtorrent %s", libtorrent.version)
         self.session = session = libtorrent.session()
 
-        session.set_alert_mask(
-            libtorrent.alert.category_t.tracker_notification |
-            libtorrent.alert.category_t.storage_notification |
-            libtorrent.alert.category_t.piece_progress_notification |
-            libtorrent.alert.category_t.file_progress_notification |
-            libtorrent.alert.category_t.status_notification |
-            libtorrent.alert.category_t.error_notification
-            )
         session.start_dht()
         session.start_lsd()
         session.start_upnp()
@@ -255,6 +247,12 @@ class TorrentStream:
         session_settings['announce_to_all_tiers'] = True
         session_settings['announce_to_all_trackers'] = True
         session_settings['upload_rate_limit'] = int(1024 * 1024 / 8)
+        session_settings['alert_mask'] = libtorrent.alert.category_t.tracker_notification | \
+                                         libtorrent.alert.category_t.storage_notification | \
+                                         libtorrent.alert.category_t.piece_progress_notification | \
+                                         libtorrent.alert.category_t.file_progress_notification | \
+                                         libtorrent.alert.category_t.status_notification | \
+                                         libtorrent.alert.category_t.error_notification
         session.apply_settings(session_settings)
 
         session.add_dht_router("router.bittorrent.com", 6881)
@@ -351,14 +349,9 @@ class TorrentStream:
                 self.log.error("Unable to load fastresume %s", exception)
 
     def notify_loop(self):
-        #self.queue_loop = self.loop.run_in_executor(None, self._alert_queue_loop)
-        self.session.set_alert_notify(self._handle_alert)
-
-    def _alert_queue_loop(self):
-        self.log.debug("enter to _alert_queue_loop")
-        while not self.queue_event.is_set():
-            if self.session.wait_for_alert(1000):
-                self.loop.call_soon_threadsafe(self._handle_alert)
+        rfile, wfile = socket.socketpair()
+        self.loop.add_reader(rfile, self._handle_alert)
+        self.session.set_alert_fd(wfile.fileno())
 
     def _handle_alert(self, alerts=None):
         if not alerts:
@@ -372,11 +365,12 @@ class TorrentStream:
 
             if hasattr(alert, 'handle'):
                 what = str(alert.handle.info_hash()) + ':' + alert.what()
-                for handler in self._alert_handlers.get(what, []):
-                    if asyncio.iscoroutinefunction(handler):
-                        self.loop.create_task(handler(alert))
-                    else:
-                        handler(alert)
+                if what in self._alert_handlers:
+                    for handler in self._alert_handlers[what]:
+                        if asyncio.iscoroutinefunction(handler):
+                            self.loop.create_task(handler(alert))
+                        else:
+                            handler(alert)
             if alert.what() in self._alert_handlers:
                 for handler in self._alert_handlers[alert.what()]:
                     if asyncio.iscoroutinefunction(handler):
@@ -555,9 +549,6 @@ class TorrentStream:
         return status
 
     async def shutdown(self, app):
-        self.queue_event.set()
-        await asyncio.wait([self.queue_loop])
-        del self.session
         self.log.info("shutdown done")
 
     async def render_GET(self, request):
