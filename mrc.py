@@ -523,7 +523,6 @@ def main():
                 self.transport.write('{}\n'.format(s.getvalue()).encode())
 
     cons = loop.run_until_complete(loop.create_server(console, '127.0.0.1', 8888))
-    torrent.notify_loop()
 
     try:
         loop.run_forever()

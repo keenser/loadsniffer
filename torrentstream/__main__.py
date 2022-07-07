@@ -18,7 +18,6 @@ def main():
 
     app = aiohttp.web.Application()
     app.add_subapp('/bt/', ts.http)
-    ts.notify_loop()
     aiohttp.web.run_app(app, port=9999, reuse_port=True)
 
 if __name__ == '__main__':

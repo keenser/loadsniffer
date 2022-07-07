@@ -283,7 +283,7 @@ class TorrentStream:
             self._handle_alert([FilesListUpdateAlert(self.list_files())])
 
         def torrent_removed_alert(alert):
-            info_hash = str(alert.handle.info_hash())
+            #info_hash = str(alert.handle.info_hash())
             #for path, handle in dict(self._files_list).items():
             #    if str(handle.handle.info_hash()) == info_hash:
             #        del self._files_list[path]
@@ -340,6 +340,10 @@ class TorrentStream:
         self.add_alert_handler('tracker_announce', tracker_announce_alert)
         self.add_alert_handler('piece_finished', piece_finished_alert)
 
+        self.rfile, self.wfile = socket.socketpair()
+        self.loop.add_reader(self.rfile, self._handle_alert)
+        self.session.set_alert_fd(self.wfile.fileno())
+
         for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
             try:
                 if os.path.exists(file):
@@ -348,13 +352,9 @@ class TorrentStream:
             except (IOError, EOFError, RuntimeError) as exception:
                 self.log.error("Unable to load fastresume %s", exception)
 
-    def notify_loop(self):
-        rfile, wfile = socket.socketpair()
-        self.loop.add_reader(rfile, self._handle_alert)
-        self.session.set_alert_fd(wfile.fileno())
-
     def _handle_alert(self, alerts=None):
         if not alerts:
+            self.rfile.recv(1)
             alerts = self.session.pop_alerts()
 
         for alert in alerts:
