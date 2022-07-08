@@ -17,6 +17,7 @@ import aiofiles
 from aiohttp import web
 import libtorrent
 import socket
+import json
 
 FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
 
@@ -642,5 +643,5 @@ class TorrentStream:
 
                 return resp
 
-        return web.json_response(ret)
+        return web.json_response(ret, dumps=lambda a: json.dumps(a).encode('utf8').decode('unicode-escape'))
 
