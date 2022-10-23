@@ -320,7 +320,7 @@ class WebSocketFactory:
         except (OSError, TimeoutError):
             pass
         except Exception as e:
-            self.log.error('websocket_handler %s', e)
+            self.log.exception('websocket_handler')
         finally:
             wsclient.onClose()
 
@@ -510,6 +510,8 @@ def main():
             super().__init__()
             self.transport = None
             self.torrent = torrent
+            self.upnp = upnp
+            self.ws = ws
 
         def connection_made(self, transport):
             self.transport = transport
