@@ -348,7 +348,7 @@ var UpdateBTStatus = function(data) {
         });
 
         let remove = document.createElement("span");
-        remove.textContent = '×';
+        remove.textContent = '✕';
         remove.title = 'Remove ' + data[i].title;
         remove.addEventListener('click',
         function(e) {
