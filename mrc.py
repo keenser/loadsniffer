@@ -178,8 +178,8 @@ class UPnPctrl:
             except Exception as exeption:
                 self.log.error('trigger_callbacks exception %s', exeption)
 
-    def refresh(self):
-        self.aioupnp.ssdp.MSearch()
+    async def refresh(self):
+        await self.aioupnp.ssdp.MSearch()
 
 
 class CancellablePool:
@@ -398,7 +398,7 @@ class WebSocketFactory:
         elif action == 'stop':
             await self.upnp.stop()
         elif action == 'refresh':
-            self.upnp.refresh()
+            await self.upnp.refresh()
         elif action == 'search':
             url = data.get('url')
             self.log.info('search %s', url)

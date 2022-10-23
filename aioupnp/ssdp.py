@@ -137,6 +137,8 @@ class SSDPServer:
         self.devices = {}
         self.resend_notify_loop = None
         self.resend_mseatch_loop = None
+        self.transport = None
+        self.ucastprotocol = None
 
         mcast = self.loop.create_datagram_endpoint(
             lambda: SSDPMcastProtocol(self),
@@ -145,12 +147,6 @@ class SSDPServer:
         )
         self.mtransport, self.mcastprotocol = self.loop.run_until_complete(mcast)
 
-        ucast = self.loop.create_datagram_endpoint(
-            lambda: SSDPProtocol(self),
-            family=socket.AF_INET, proto=socket.IPPROTO_UDP,
-            reuse_port=True,
-        )
-        self.transport, self.ucastprotocol = self.loop.run_until_complete(ucast)
 
         self.resend_mseatch_loop = self.loop.create_task(self._resend_msearch())
 
@@ -201,7 +197,7 @@ class SSDPServer:
         (host, port) = addr
         self.log.debug('Discovery request from %s:%d for %s', host, port, headers.get('st'))
 
-    def MSearch(self):
+    async def MSearch(self):
         req = ['M-SEARCH * HTTP/1.1',
                'HOST: %s:%d' % (SSDP_ADDR, SSDP_PORT),
                'MAN: "ssdp:discover"',
@@ -212,11 +208,20 @@ class SSDPServer:
         req = '\r\n'.join(req)
 
         try:
+            if self.transport is None or self.transport.is_closing():
+                self.transport, self.ucastprotocol = await self.loop.create_datagram_endpoint(
+                    lambda: SSDPProtocol(self),
+                    family=socket.AF_INET, proto=socket.IPPROTO_UDP,
+                    reuse_port=True,
+                )
+
             self.transport.sendto(req.encode(), (SSDP_ADDR, SSDP_PORT))
         except socket.error as msg:
             self.log.info("failure sending out the discovery message: %r", msg)
+        except Exception as msg:
+            self.log.exception("MSearch general failue")
 
     async def _resend_msearch(self):
         while True:
-            self.MSearch()
+            await self.MSearch()
             await asyncio.sleep(120)
