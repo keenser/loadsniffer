@@ -6,9 +6,25 @@
 import logging
 import urllib.parse
 import aiohttp
-from xml.parsers.expat import ExpatError
 import lxml.etree as xml
-import xmltodict
+
+
+class Element(xml.ElementBase):
+    def find(self, match, namespaces=None):
+        return super().find(match, namespaces or self.nsmap)
+
+    def findall(self, match, namespaces=None):
+        return super().findall(match, namespaces or self.nsmap)
+
+    def findtext(self, match, default=None, namespaces=None):
+        return super().findtext(match, default, namespaces or self.nsmap)
+
+    def iterfind(self, match, namespaces=None):
+        return super().iterfind(match, namespaces or self.nsmap)
+
+    def get(self, match):
+        element = self.find(match)
+        return element.text if element is not None else None
 
 
 class DIDLLite:
@@ -26,6 +42,10 @@ class DIDLLite:
     def __init__(self):
         for i, j in self.namespaces.items():
             xml.register_namespace(i, j)
+
+        lookup = xml.ElementDefaultClassLookup(element=Element)
+        self.parser = xml.XMLParser(encoding='utf8')
+        self.parser.set_element_class_lookup(lookup)
 
     @staticmethod
     def DIDLElement(item):
@@ -57,12 +77,8 @@ class DIDLLite:
     def toString(data):
         return xml.tostring(data, encoding='utf8', xml_declaration=True).decode()
 
-    @staticmethod
-    def fromString(data):
-        try:
-            return xmltodict.parse(data, dict_constructor=dict)
-        except ExpatError:
-            return None
+    def fromString(self, data):
+        return xml.fromstring(data, self.parser)
 
 
 didl = DIDLLite()
@@ -99,9 +115,9 @@ class DLNAAction:
                 return resp
 
 
-class DLNAService(dict):
+class DLNAService:
     def __init__(self, device, service):
-        super().__init__(service)
+        self.service = service
         self.device = device
         self.events_subscription = False
         self.callbacks = {}
@@ -129,6 +145,9 @@ class DLNAService(dict):
         if self.events_subscription:
             await self.device.events.unsubscribe(self.uid)
             self.device.events.subscribe(self, self.eventscallback)
+
+    def get(self, name):
+        return self.service.get(name)
 
     @property
     def location(self):

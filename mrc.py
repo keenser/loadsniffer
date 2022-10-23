@@ -149,11 +149,11 @@ class UPnPctrl:
                 try:
                     elt = aioupnp.dlna.didl.fromString(variable.value)
                     self.mediadevices[usn].status['item'] = []
-                    url = elt['DIDL-Lite']['item'].get('res', {}).get('#text') or elt['DIDL-Lite']['item']['@id']
-                    self.log.info('now playing: %s %s', elt['DIDL-Lite']['item']['dc:title'], url)
+                    url = elt.get('item/res') if elt.get('item/res') is not None else elt.find('item').attrib.get('id')
+                    self.log.info('now playing: %s %s', elt.get('item/dc:title'), url)
                     self.mediadevices[usn].status['item'].append({
                         'url':   url,
-                        'title': elt['DIDL-Lite']['item']['dc:title']
+                        'title': elt.get('item/dc:title')
                     })
                     #for item in elt.getItems():
                     #    print("now playing:", item.title, item.id)

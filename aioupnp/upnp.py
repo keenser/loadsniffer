@@ -6,7 +6,7 @@
 import asyncio
 import logging
 import functools
-import xmltodict
+import lxml.etree as xml
 import aiohttp
 import aiohttp.web
 import aiohttp.client_proto
@@ -17,6 +17,7 @@ from . import ssdp
 from . import dlna
 from . import events
 from typing import Optional
+from functools import cached_property
 
 
 class ResponseHandler(aiohttp.client_proto.ResponseHandler):
@@ -32,24 +33,23 @@ class TCPConnector(aiohttp.connector.TCPConnector):
 
 
 class UPNPDevice:
-    def __init__(self, description=None, parent=None):
+    def __init__(self, description, parent=None):
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
-        self._description = description or {}
+        self._description = description
         self._parent_device = parent
         self._device_list = []
         self._service_list = {}
-        for service in self._description.get('serviceList', {}).get('service', []):
-            servicetype = self.getName(service.get('serviceType'))
+        for service in self._description.iterfind('serviceList/service'):
+            servicetype = self.getName(service.find('serviceType').text)
             if servicetype == 'AVTransport':
                 dlnaservice = dlna.AVTransport(self, service)
             else:
                 dlnaservice = dlna.DLNAService(self, service)
             self._service_list[servicetype] = dlnaservice
 
-        if 'deviceList' in self._description:
-            for child in self._description['deviceList'].get('device', []):
-                dev = UPNPDevice(description=child, parent=self)
-                self._device_list.append(dev)
+        for child in self._description.iterfind('deviceList/device'):
+            dev = UPNPDevice(description=child, parent=self)
+            self._device_list.append(dev)
         notify.send('UPnP.Device.detection_completed', device=self)
 
     async def shutdown(self):
@@ -72,8 +72,12 @@ class UPNPDevice:
             return typename
 
     @property
+    def root(self):
+        return self._parent_device
+
+    @property
     def ssdp(self):
-        return self._parent_device.ssdp
+        return self.root.ssdp
 
     @property
     def usn(self):
@@ -83,15 +87,15 @@ class UPNPDevice:
     def location(self):
         return self.ssdp.get('location')
 
-    @property
+    @cached_property
     def deviceType(self):
         return self._description.get('deviceType')
 
-    @property
+    @cached_property
     def friendlyDeviceType(self):
         return self.getName(self.deviceType)
 
-    @property
+    @cached_property
     def friendlyName(self):
         return self._description.get('friendlyName')
 
@@ -100,11 +104,11 @@ class UPNPDevice:
 
     @property
     def events(self):
-        return self._parent_device.events
+        return self.root.events
 
-    @property
+    @cached_property
     def localhost(self):
-        return self._description.get('localhost')
+        return self.root._description.get('localhost')
 
 
 class UPNPRootDevice(UPNPDevice):
@@ -112,6 +116,10 @@ class UPNPRootDevice(UPNPDevice):
         self._ssdp = ssdp
         self._events = events
         super().__init__(description=description)
+
+    @property
+    def root(self):
+        return self
 
     @property
     def ssdp(self):
@@ -169,11 +177,11 @@ class UPNPServer:
         try:
             async with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop), read_timeout=5, raise_for_status=True) as session:
                 async with session.get(url) as resp:
-                    text = await resp.text()
-                    xml = xmltodict.parse(text, dict_constructor=dict, force_list=('device', 'service'))
-                    device = xml['root']['device'][0]
-                    #TODO: format localhost url
-                    device['localhost'] = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
+                    data = await resp.read()
+                    spec = dlna.didl.fromString(data)
+                    device = spec.find('device')
+                    localhost = xml.SubElement(device, xml.QName(device.nsmap[None], 'localhost'))
+                    localhost.text = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
                     return device
         except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
             self.log.warning('%s: %s', err.__class__.__name__, err)
@@ -182,7 +190,7 @@ class UPNPServer:
     async def create_device(self, device=None):
         self.log.warning('create %s', device)
         description = await self.parse_description(device.get('location'))
-        if description:
+        if description is not None:
             self.devices[device.get('usn')] = UPNPRootDevice(description, device, self.events)
 
     async def remove_device(self, device=None):

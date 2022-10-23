@@ -10,7 +10,7 @@ import aiohttp.web
 import aiohttp.client_exceptions
 from typing import Type, Awaitable, Callable, Dict
 import urllib.parse
-import xmltodict
+import lxml.etree as xml
 import time
 from . import notify
 from . import dlna
@@ -48,26 +48,24 @@ class EventsServer:
         http.on_shutdown.append(self.shutdown)
 
     async def events_handler(self, request):
-        self.log.debug('events_handler request %s', request)
-        if request.has_body:
-            body = await request.text()
+        if request.can_read_body:
+            body = await request.read()
             service = self.sidtoservice.get(request.headers.get('SID'))
             self.log.debug('event %s %s', request.headers.get('SID'), service)
             if service:
                 events = self.events.setdefault(service.uid, {})
 
-                d = xmltodict.parse(body, dict_constructor=dict)
-                lastchange = d.get('e:propertyset', {}).get('e:property', {}).get('LastChange')
-                if lastchange:
-                    lastevents = xmltodict.parse(lastchange, dict_constructor=dict)
-                    eventsdict = lastevents.get('Event', {}).get('InstanceID', {})
-                    for var, data in eventsdict.items():
-                        if isinstance(data, str):
-                            continue
-                        event = events.setdefault(var, Event(var))
-                        event.update(data.get('@val'))
+                d = xml.fromstring(body)
+                lastchange = d.find('e:property/LastChange', d.nsmap)
+                if lastchange is not None:
+                    lastevents = xml.fromstring(lastchange.text)
+                    for lastevent in lastevents.iterfind('InstanceID/*', lastevents.nsmap):
+                        tag = xml.QName(lastevent.tag)
+                        event = events.setdefault(tag.localname, Event(tag.localname))
+                        event.update(lastevent.attrib['val'])
                     self.log.debug('events %s', self.events)
                     notify.send('UPnP.DLNA.Event.{}'.format(request.headers.get('SID')), data=events)
+
         return aiohttp.web.Response()
 
     async def shutdown(self, app=None):
