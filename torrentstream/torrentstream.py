@@ -406,7 +406,6 @@ class TorrentStream:
         add_torrent_params = None
         if resume_data:
             add_torrent_params = libtorrent.read_resume_data(resume_data)
-            add_torrent_params.flags |= libtorrent.add_torrent_params_flags_t.flag_override_resume_data
         elif url:
             add_torrent_params = libtorrent.add_torrent_params()
             add_torrent_params.url = url
