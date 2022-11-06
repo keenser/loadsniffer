@@ -20,7 +20,7 @@ class SSDPDevice(dict):
 
     def __init__(self, server, data={}):
         super().__init__(data)
-        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.log = logging.getLogger('{}.{}'.format(__name__, __class__.__name__))
         self.server = server
         self.handle = None
         self.manifestation = None
@@ -132,9 +132,9 @@ class SSDPMcastProtocol(SSDPProtocol):
 
 class SSDPServer:
     def __init__(self, loop=None):
-        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.__log = logging.getLogger('{}.{}'.format(__name__, __class__.__name__))
         self.loop = loop or asyncio.get_event_loop()
-        self.devices = {}
+        self.ssdpdevices = {}
         self.resend_notify_loop = None
         self.resend_mseatch_loop = None
         self.transport = None
@@ -150,8 +150,17 @@ class SSDPServer:
 
         self.resend_mseatch_loop = self.loop.create_task(self._resend_msearch())
 
+    async def device_created(self, device:SSDPDevice):
+        pass
+
+    async def device_updated(self, device:SSDPDevice):
+        pass
+
+    async def device_removed(self, device:SSDPDevice):
+        pass
+
     async def shutdown(self):
-        for key in list(self.devices):
+        for key in list(self.ssdpdevices):
             self.unregister(key)
         self.resend_mseatch_loop.cancel()
         try:
@@ -160,19 +169,19 @@ class SSDPServer:
             pass
 
     def register(self, headers, manifestation='remote', silent=False):
-        self.log.log(1, 'Register headers: %s', headers)
-        if headers.get('usn') in self.devices:
-            self.log.debug('updating last-seen for %r', headers.get('usn'))
-            device = self.devices.get(headers.get('usn'))
+        self.__log.log(1, 'Register headers: %s', headers)
+        if headers.get('usn') in self.ssdpdevices:
+            self.__log.debug('updating last-seen for %r', headers.get('usn'))
+            device = self.ssdpdevices.get(headers.get('usn'))
             _, current_port = urllib.parse.splitnport(urllib.parse.urlsplit(device.get('location')).netloc)
             _, headers_port = urllib.parse.splitnport(urllib.parse.urlsplit(headers.get('location')).netloc)
             if current_port != headers_port:
                 device.update(headers)
                 if device.get('nt') == 'upnp:rootdevice':
-                    notify.send('UPnP.SSDP.update_device', device=device)
+                    self.loop.create_task(self.device_updated(device))
             device.ssdpalive()
         else:
-            self.log.info('Registering %s (%s)', headers.get('nt'), headers.get('location'))
+            self.__log.info('Registering %s (%s)', headers.get('nt'), headers.get('location'))
             device = None
             if manifestation == 'remote':
                 device = SSDPRemoteDevice(self, headers)
@@ -180,22 +189,23 @@ class SSDPServer:
                 device = SSDPLocalDevice(self, headers)
                 device['nts'] = 'ssdp:alive'
                 device.silent = silent
+            self.__log.info('device %s', device)
             if device:
-                self.devices[headers.get('usn')] = device
+                self.ssdpdevices[headers.get('usn')] = device
 
                 if headers.get('nt') == 'upnp:rootdevice':
-                    notify.send('UPnP.SSDP.new_device', device=device)
+                    self.loop.create_task(self.device_created(device))
 
     def unregister(self, usn):
-        if usn in self.devices:
-            self.log.info("Un-registering %s", usn)
-            if self.devices[usn].get('nt') == 'upnp:rootdevice':
-                notify.send('UPnP.SSDP.removed_device', device=self.devices[usn])
-            self.devices.pop(usn).shutdown()
+        if usn in self.ssdpdevices:
+            self.__log.info("Un-registering %s", usn)
+            if self.ssdpdevices[usn].get('nt') == 'upnp:rootdevice':
+                self.loop.create_task(self.device_removed(self.ssdpdevices[usn]))
+            self.ssdpdevices.pop(usn).shutdown()
 
     def discoveryRequest(self, headers, addr):
         (host, port) = addr
-        self.log.debug('Discovery request from %s:%d for %s', host, port, headers.get('st'))
+        self.__log.debug('Discovery request from %s:%d for %s', host, port, headers.get('st'))
 
     async def MSearch(self):
         req = ['M-SEARCH * HTTP/1.1',
@@ -215,11 +225,12 @@ class SSDPServer:
                     reuse_port=True,
                 )
 
+            self.__log.debug('send MSearch to %s:%d', SSDP_ADDR, SSDP_PORT)
             self.transport.sendto(req.encode(), (SSDP_ADDR, SSDP_PORT))
         except socket.error as msg:
-            self.log.info("failure sending out the discovery message: %r", msg)
+            self.__log.info("failure sending out the discovery message: %r", msg)
         except Exception as msg:
-            self.log.exception("MSearch general failue")
+            self.__log.exception("MSearch general failue")
 
     async def _resend_msearch(self):
         while True:

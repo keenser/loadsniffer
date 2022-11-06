@@ -130,13 +130,15 @@ class UPNPRootDevice(UPNPDevice):
         return self._events
 
 
-class UPNPServer:
+class UPNPServer(ssdp.SSDPServer):
     def __init__(self,
                  loop: Optional[asyncio.AbstractEventLoop] = None,
                  http: Optional[aiohttp.web.Application] = None,
                  httpport: int = 0
                  ) -> None:
-        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        super().__init__()
+
+        self.log = logging.getLogger('{}.{}'.format(__name__, __class__.__name__))
         self.loop = loop or asyncio.get_event_loop()
         self.http = aiohttp.web.Application() if http is None else http #can't use 'http or Application()'
         self.httpport = httpport
@@ -144,12 +146,7 @@ class UPNPServer:
         self.httpserver = None
         self.devices = {}
 
-        notify.connect('UPnP.SSDP.new_device', self.create_device)
-        notify.connect('UPnP.SSDP.removed_device', self.remove_device)
-        notify.connect('UPnP.SSDP.update_device', self.update_device)
-
         self.events = events.EventsServer(loop=self.loop, http=self.http)
-        self.ssdp = ssdp.SSDPServer(loop=self.loop)
 
         self.http.on_shutdown.append(self.shutdown)
 
@@ -162,7 +159,7 @@ class UPNPServer:
         #for device in self.devices.values():
         #    await device.shutdown()
 
-        await self.ssdp.shutdown()
+        await super().shutdown()
 
         if self.httpserver:
             self.httpserver.close()
@@ -187,20 +184,20 @@ class UPNPServer:
             self.log.warning('%s: %s', err.__class__.__name__, err)
             return
 
-    async def create_device(self, device=None):
+    async def device_created(self, device=None):
         self.log.warning('create %s', device)
         description = await self.parse_description(device.get('location'))
         if description is not None:
             self.devices[device.get('usn')] = UPNPRootDevice(description, device, self.events)
 
-    async def remove_device(self, device=None):
+    async def device_removed(self, device=None):
         self.log.warning('remove %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.pop(device.get('usn'))
             notify.send('UPnP.RootDevice.removed', device=upnpdevice)
             await upnpdevice.shutdown()
 
-    async def update_device(self, device=None):
+    async def device_updated(self, device=None):
         self.log.warning('update %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.get(device.get('usn'))

@@ -100,10 +100,9 @@ class DLNAAction:
         b = xml.SubElement(e, n('s', 'Body'))
         a = xml.SubElement(b, xml.QName(servicetype, self.action), nsmap={'u': servicetype})
         for name, val in data.items():
-            i = xml.SubElement(a, name)
-            i.text = str(val)
+            xml.SubElement(a, name).text = str(val)
 
-        datastr = xml.tostring(e, encoding='utf8', xml_declaration=True, pretty_print=True).decode()
+        datastr = xml.tostring(e, encoding='utf8', xml_declaration=True, pretty_print=False).decode()
 
         async with aiohttp.ClientSession(read_timeout=5, raise_for_status=True) as session:
             async with session.post(url, data=datastr,

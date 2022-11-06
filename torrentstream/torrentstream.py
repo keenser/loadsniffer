@@ -604,7 +604,8 @@ class TorrentStream:
                 class StreamResponse(web.StreamResponse):
                     async def write(self, data):
                         self.resume()
-                        await super().write(data)
+                        if not self._payload_writer.transport.is_closing():
+                            await super().write(data)
 
                     @staticmethod
                     def resume():

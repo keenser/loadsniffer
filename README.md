@@ -8,7 +8,7 @@ Uses torrentstream.py module to stream media over torrent network.
 # How to run
 On server side(your home media server):
 
-$ sudo apt-get install python3-libtorrent python3-xmltodict python3-lxml python3-aiohttp python3-aiofiles youtube-dl
+$ sudo apt-get install python3-libtorrent python3-lxml python3-aiohttp python3-aiofiles youtube-dl
 
 $ ./mrc.py
 
