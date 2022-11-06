@@ -246,25 +246,25 @@ var onHeadersReceived = function(callback, urlfilter) {
     chrome.webRequest.onResponseStarted.addListener(onHeadersReceived, urlfilter, ["responseHeaders"]);
 }
 //onHeadersReceived(LogListener, {urls: ["<all_urls>"]});
-onHeadersReceived(CommonListener, {
-    urls: ["*://*/*.mp4*", "*://*/*.flv*", "*://*/*.m3u8*", //"*://*/*video*",
-    ],
-});
-onHeadersReceived(ResolveListener, {
-    urls: ["*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", "*://rutube.ru/video/*", "*://rutube.ru/play/embed/*", "*://rutube.ru/tags/video/*", "*://rutube.ru/metainfo/tv/*", "*://*.vimeo.com/*/video/*", "*://*.vimeo.com/video/*", "*://*.vimeopro.com/*/video/*", "*://*.vimeopro.com/video/*", "*://*.vk.com/video*", ],
-});
-onHeadersReceived(RuTubeListener, {
-    urls: ["*://*.rutube.ru/api/play/options/*", ],
-});
-onHeadersReceived(MailRuListener, {
-    urls: ["*://*.my.mail.ru/*.mp4*", "*://*.mail.ru/*/video/*", "*://videoapi.my.mail.ru/videos/*"],
-});
-onHeadersReceived(f4mListener, {
-    urls: ["*://*/*.f4m*", ],
-});
-onHeadersReceived(HDSListener, {
-    urls: ["*://*/*hds/track*"],
-});
+//onHeadersReceived(CommonListener, {
+//    urls: ["*://*/*.mp4*", "*://*/*.flv*", "*://*/*.m3u8*", //"*://*/*video*",
+//    ],
+//});
+//onHeadersReceived(ResolveListener, {
+//    urls: ["*://*.youtube.com/embed/*", "*://*.youtube.com/watch?*", "*://rutube.ru/video/*", "*://rutube.ru/play/embed/*", "*://rutube.ru/tags/video/*", "*://rutube.ru/metainfo/tv/*", "*://*.vimeo.com/*/video/*", "*://*.vimeo.com/video/*", "*://*.vimeopro.com/*/video/*", "*://*.vimeopro.com/video/*", "*://*.vk.com/video*", ],
+//});
+//onHeadersReceived(RuTubeListener, {
+//    urls: ["*://*.rutube.ru/api/play/options/*", ],
+//});
+//onHeadersReceived(MailRuListener, {
+//    urls: ["*://*.my.mail.ru/*.mp4*", "*://*.mail.ru/*/video/*", "*://videoapi.my.mail.ru/videos/*"],
+//});
+//onHeadersReceived(f4mListener, {
+//    urls: ["*://*/*.f4m*", ],
+//});
+//onHeadersReceived(HDSListener, {
+//    urls: ["*://*/*hds/track*"],
+//});
 function context_onclick(info, tab) {
     console.log('context_onclick', info, tab);
     mrc.sendMessage({
@@ -309,12 +309,12 @@ var onStartupOrOnInstalledListener = function() {
         });
     });
 }
-chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
-    if (changeInfo.status == 'loading' && changeInfo.url !== undefined && tab.url.startsWith('http')) {
-        console.debug('reload tabid:', id, changeInfo, tab);
-        ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
-    }
-});
+//chrome.tabs.onUpdated.addListener(function(id, changeInfo, tab) {
+//    if (changeInfo.status == 'loading' && changeInfo.url !== undefined && tab.url.startsWith('http')) {
+//        console.debug('reload tabid:', id, changeInfo, tab);
+//        ResolveListener(id, tab.url, tab.title, tab, UpdateTabLib);
+//    }
+//});
 chrome.extension.onMessage.addListener(function(message, sender, f_callback) {
     if (message.action == 'tabid') {
         currenttabid = message.tabid;
