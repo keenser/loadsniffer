@@ -7,6 +7,7 @@ import asyncio
 import logging
 import socket
 import struct
+import ipaddress
 import urllib.parse
 from . import notify
 from . import version
@@ -173,9 +174,11 @@ class SSDPServer:
         if headers.get('usn') in self.ssdpdevices:
             self.__log.debug('updating last-seen for %r', headers.get('usn'))
             device = self.ssdpdevices.get(headers.get('usn'))
-            _, current_port = urllib.parse.splitnport(urllib.parse.urlsplit(device.get('location')).netloc)
-            _, headers_port = urllib.parse.splitnport(urllib.parse.urlsplit(headers.get('location')).netloc)
-            if current_port != headers_port:
+            current_host, current_port = urllib.parse.splitnport(urllib.parse.urlsplit(device.get('location')).netloc)
+            headers_host, headers_port = urllib.parse.splitnport(urllib.parse.urlsplit(headers.get('location')).netloc)
+            current_host = ipaddress.ip_address(current_host)
+            headers_host = ipaddress.ip_address(headers_host)
+            if current_port != headers_port or current_host.version == headers_host.version and current_host != headers_host:
                 device.update(headers)
                 if device.get('nt') == 'upnp:rootdevice':
                     self.loop.create_task(self.device_updated(device))

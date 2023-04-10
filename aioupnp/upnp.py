@@ -201,6 +201,7 @@ class UPNPServer(ssdp.SSDPServer):
         self.log.warning('update %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.get(device.get('usn'))
+            upnpdevice._ssdp = device
             await upnpdevice.update_callback()
         else:
-            await self.create_device(device=device)
+            await self.device_created(device=device)

@@ -385,7 +385,9 @@ var UpdateBTStatus = function(data) {
 
         let files = document.createElement("div");
         for (let f = 0; f < data[i].files.length; f++) {
-            addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null, localurl, data[i].info_hash + '_' + data[i].files[f].id, data[i].files[f].progress);
+            if (data[i].files[f].title !== undefined) {
+                addSingleLink(files, data[i].files[f].title, data[i].files[f].url, data[i].files[f].title, null, localurl, data[i].info_hash + '_' + data[i].files[f].id, data[i].files[f].progress);
+            }
         }
         if (bthiddenlist[data[i].info_hash] !== undefined) {
             files.className = bthiddenlist[data[i].info_hash];

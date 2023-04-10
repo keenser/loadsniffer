@@ -328,6 +328,7 @@ class WebSocketFactory:
 
     @staticmethod
     def videofiles(files):
+        return files
         ret = []
         for i in files:
             mime = mimetypes.guess_type(i['path'], strict=False)[0]
