@@ -175,7 +175,6 @@ class UPNPServer(ssdp.SSDPServer):
         try:
             async with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop), read_timeout=5, raise_for_status=True) as session:
                 async with session.get(url) as resp:
-                    assert resp._protocol
                     data = await resp.read()
                     spec = dlna.didl.fromString(data)
                     device = spec.find('device')

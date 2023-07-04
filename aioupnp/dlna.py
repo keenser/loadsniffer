@@ -3,6 +3,7 @@
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 #
 
+from __future__ import annotations
 import logging
 from typing import Optional
 from . import upnp
