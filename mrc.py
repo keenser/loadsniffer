@@ -179,7 +179,7 @@ class UPnPctrl:
                 self.log.error('trigger_callbacks exception %s', exeption)
 
     async def refresh(self):
-        await self.aioupnp.ssdp.MSearch()
+        await self.aioupnp.MSearch()
 
 
 class CancellablePool:
