@@ -4,6 +4,8 @@
 #
 
 import logging
+from typing import Optional
+from . import upnp
 import urllib.parse
 import aiohttp
 import lxml.etree as xml
@@ -48,28 +50,28 @@ class DIDLLite:
         self.parser.set_element_class_lookup(lookup)
 
     @staticmethod
-    def DIDLElement(item):
-        element = xml.Element('DIDL-Lite', xmlns='urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/')
+    def DIDLElement(item:xml.ElementBase) -> xml.ElementBase:
+        element = xml.Element('DIDL-Lite', attrib=None, nsmap=None, xmlns='urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/')
         element.append(item)
         return element
 
     @staticmethod
-    def VideoItem(itemid, parentid, restricted, title, resource):
+    def VideoItem(itemid:Optional[str], parentid:Optional[str], restricted:int, title:str, resource:xml.ElementBase) -> xml.ElementBase:
         n = lambda n, e: xml.QName(DIDLLite.namespaces[n], e)
 
-        item = xml.Element('item', {'id': str(itemid), 'parentID': str(parentid), 'restricted': str(restricted)})
-        _title = xml.SubElement(item, n('dc', 'title'))
+        item = xml.Element('item', {'id': str(itemid), 'parentID': str(parentid), 'restricted': str(restricted)}, nsmap=None)
+        _title = xml.SubElement(item, n('dc', 'title'), attrib=None, nsmap=None)
         _title.text = title
-        _class = xml.SubElement(item, n('upnp', 'class'))
+        _class = xml.SubElement(item, n('upnp', 'class'), attrib=None, nsmap=None)
         _class.text = 'object.item.videoItem'
-        _date = xml.SubElement(item, n('dc', 'date'))
+        _date = xml.SubElement(item, n('dc', 'date'), attrib=None, nsmap=None)
         _date.text = '2003-07-23T01:18:00+02:00'
         item.append(resource)
         return item
 
     @staticmethod
-    def Resource(protocolInfo, text):
-        _resource = xml.Element('res', protocolInfo=protocolInfo)
+    def Resource(protocolInfo:str, text:str) -> xml.ElementBase:
+        _resource = xml.Element('res', attrib=None, nsmap=None, protocolInfo=protocolInfo)
         _resource.text = text
         return _resource
 
@@ -77,7 +79,7 @@ class DIDLLite:
     def toString(data):
         return xml.tostring(data, encoding='utf8', xml_declaration=True).decode()
 
-    def fromString(self, data):
+    def fromString(self, data) -> Element:
         return xml.fromstring(data, self.parser)
 
 
@@ -97,10 +99,10 @@ class DLNAAction:
         n = lambda n, e: xml.QName(ns[n], e)
 
         e = xml.Element(n('s', 'Envelope'), attrib={n('s', 'encodingStyle'): "http://schemas.xmlsoap.org/soap/encoding/"}, nsmap=ns)
-        b = xml.SubElement(e, n('s', 'Body'))
-        a = xml.SubElement(b, xml.QName(servicetype, self.action), nsmap={'u': servicetype})
+        b = xml.SubElement(e, n('s', 'Body'), attrib=None, nsmap=None)
+        a = xml.SubElement(b, xml.QName(servicetype, self.action), attrib=None, nsmap={'u': servicetype})
         for name, val in data.items():
-            xml.SubElement(a, name).text = str(val)
+            xml.SubElement(a, name, attrib=None, nsmap=None).text = str(val)
 
         datastr = xml.tostring(e, encoding='utf8', xml_declaration=True, pretty_print=False).decode()
 
@@ -115,7 +117,7 @@ class DLNAAction:
 
 
 class DLNAService:
-    def __init__(self, device, service):
+    def __init__(self, device: upnp.UPNPDevice, service):
         self.service = service
         self.device = device
         self.events_subscription = False
@@ -179,15 +181,15 @@ class AVTransport(DLNAService):
     async def pause(self):
         return await self.action('Pause').call(InstanceID=0)
 
-    async def setplaymode(self, mode):
+    async def setplaymode(self, mode:str):
         return await self.action('SetPlayMode').call(InstanceID=0, NewPlayMode=mode)
 
-    async def setavtransporturi(self, url, title, mime):
+    async def setavtransporturi(self, url:str, title:str, mime:str):
         dlnatags = 'http-get:*:{}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'.format(mime)
         metadata = didl.DIDLElement(didl.VideoItem(None, None, 0, title, didl.Resource(dlnatags, url)))
         return await self.action('SetAVTransportURI').call(InstanceID=0, CurrentURI=url, CurrentURIMetaData=didl.toString(metadata))
 
-    async def setnextavtransporturi(self, url, title, mime):
+    async def setnextavtransporturi(self, url:str, title:str, mime:str):
         dlnatags = 'http-get:*:{}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'.format(mime)
         metadata = didl.DIDLElement(didl.VideoItem(None, None, 0, title, didl.Resource(dlnatags, url)))
         return await self.action('SetNextAVTransportURI').call(InstanceID=0, NextURI=url, NextURIMetaData=didl.toString(metadata))

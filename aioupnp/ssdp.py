@@ -3,11 +3,13 @@
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 #
 
+from __future__ import annotations
 import asyncio
 import logging
 import socket
 import struct
 import ipaddress
+from typing import Any, Dict, Optional
 import urllib.parse
 from . import notify
 from . import version
@@ -19,7 +21,7 @@ SSDP_ADDR = '239.255.255.250'
 class SSDPDevice(dict):
     render_headers = ['nts', 'usn', 'nt', 'location', 'server', 'cache-control']
 
-    def __init__(self, server, data={}):
+    def __init__(self, server:SSDPServer, data={}):
         super().__init__(data)
         self.log = logging.getLogger('{}.{}'.format(__name__, __class__.__name__))
         self.server = server
@@ -77,6 +79,7 @@ class SSDPLocalDevice(SSDPDevice):
         self.log.info('Sending %s notification for %s', self.get('nts'), self.get('usn'))
         self.log.debug('send_notify content %s', self)
         try:
+            assert self.server.transport
             self.server.transport.sendto(bytes(self), (SSDP_ADDR, SSDP_PORT))
         except (AttributeError, socket.error) as msg:
             self.log.info("failure sending out alive notification: %r", msg)
@@ -89,7 +92,7 @@ class SSDPLocalDevice(SSDPDevice):
 
 
 class SSDPProtocol(asyncio.DatagramProtocol):
-    def __init__(self, server):
+    def __init__(self, server: SSDPServer):
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.server = server
 
@@ -97,7 +100,7 @@ class SSDPProtocol(asyncio.DatagramProtocol):
         lines = data.decode().splitlines()
         cmd = lines.pop(0)
 
-        headers = {}
+        headers: Dict[str, str] = {}
         for line in lines:
             try:
                 key, value = line.split(':', 1)
@@ -112,11 +115,11 @@ class SSDPProtocol(asyncio.DatagramProtocol):
             if headers.get('nts') == 'ssdp:alive':
                 self.server.register(headers)
             elif headers.get('nts') == 'ssdp:byebye':
-                self.server.unregister(headers.get('usn'))
+                self.server.unregister(headers['usn'])
             else:
                 self.log.warning('Unknown subtype %s for notification type %s', headers.get('nts'), headers.get('nt'))
         elif cmd.startswith('HTTP/1.1 200 OK'):
-            headers['nt'] = headers.get('st')
+            headers['nt'] = headers['st']
             self.server.register(headers)
         else:
             self.log.warning('Unknown SSDP command %s\n%s', cmd, headers)
@@ -132,12 +135,12 @@ class SSDPMcastProtocol(SSDPProtocol):
 
 
 class SSDPServer:
-    def __init__(self, loop=None):
+    def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None):
         self.__log = logging.getLogger('{}.{}'.format(__name__, __class__.__name__))
         self.loop = loop or asyncio.get_event_loop()
-        self.ssdpdevices = {}
+        self.ssdpdevices: Dict[str, SSDPDevice] = {}
         self.resend_notify_loop = None
-        self.resend_mseatch_loop = None
+        self.resend_mseatch_loop: asyncio.Task
         self.transport = None
         self.ucastprotocol = None
 
@@ -169,16 +172,18 @@ class SSDPServer:
         except asyncio.CancelledError:
             pass
 
-    def register(self, headers, manifestation='remote', silent=False):
+    def register(self, headers: Dict[str, str], manifestation='remote', silent=False):
         self.__log.log(1, 'Register headers: %s', headers)
         if headers.get('usn') in self.ssdpdevices:
             self.__log.debug('updating last-seen for %r', headers.get('usn'))
-            device = self.ssdpdevices.get(headers.get('usn'))
-            current_host, current_port = urllib.parse.splitnport(urllib.parse.urlsplit(device.get('location')).netloc)
-            headers_host, headers_port = urllib.parse.splitnport(urllib.parse.urlsplit(headers.get('location')).netloc)
-            current_host = ipaddress.ip_address(current_host)
-            headers_host = ipaddress.ip_address(headers_host)
-            if current_port != headers_port or current_host.version == headers_host.version and current_host != headers_host:
+            device = self.ssdpdevices[headers['usn']]
+            urlcurrent = urllib.parse.urlparse(device.get('location'))
+            urlheaders = urllib.parse.urlparse(headers.get('location'))
+            assert urlcurrent.hostname
+            assert urlheaders.hostname
+            current_host = ipaddress.ip_address(urlcurrent.hostname)
+            headers_host = ipaddress.ip_address(urlheaders.hostname)
+            if urlcurrent.port != urlheaders.port or current_host.version == headers_host.version and current_host != headers_host:
                 device.update(headers)
                 if device.get('nt') == 'upnp:rootdevice':
                     self.loop.create_task(self.device_updated(device))
@@ -194,19 +199,19 @@ class SSDPServer:
                 device.silent = silent
             self.__log.info('device %s', device)
             if device:
-                self.ssdpdevices[headers.get('usn')] = device
+                self.ssdpdevices[headers['usn']] = device
 
                 if headers.get('nt') == 'upnp:rootdevice':
                     self.loop.create_task(self.device_created(device))
 
-    def unregister(self, usn):
+    def unregister(self, usn: str):
         if usn in self.ssdpdevices:
             self.__log.info("Un-registering %s", usn)
             if self.ssdpdevices[usn].get('nt') == 'upnp:rootdevice':
                 self.loop.create_task(self.device_removed(self.ssdpdevices[usn]))
             self.ssdpdevices.pop(usn).shutdown()
 
-    def discoveryRequest(self, headers, addr):
+    def discoveryRequest(self, headers:Dict[str, str], addr:tuple[str | Any, int]):
         (host, port) = addr
         self.__log.debug('Discovery request from %s:%d for %s', host, port, headers.get('st'))
 

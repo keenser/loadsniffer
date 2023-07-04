@@ -3,6 +3,7 @@
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 #
 
+from __future__ import annotations
 import asyncio
 import logging
 import functools
@@ -16,7 +17,7 @@ from . import notify
 from . import ssdp
 from . import dlna
 from . import events
-from typing import Optional
+from typing import Dict, Optional
 from functools import cached_property
 
 
@@ -33,7 +34,7 @@ class TCPConnector(aiohttp.connector.TCPConnector):
 
 
 class UPNPDevice:
-    def __init__(self, description, parent=None):
+    def __init__(self, description:dlna.Element, parent:UPNPDevice):
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self._description = description
         self._parent_device = parent
@@ -115,11 +116,11 @@ class UPNPRootDevice(UPNPDevice):
     def __init__(self, description, ssdp, events):
         self._ssdp = ssdp
         self._events = events
-        super().__init__(description=description)
+        super().__init__(description=description, parent=self)
 
-    @property
-    def root(self):
-        return self
+    # @property
+    # def root(self):
+    #     return self
 
     @property
     def ssdp(self):
@@ -144,7 +145,7 @@ class UPNPServer(ssdp.SSDPServer):
         self.httpport = httpport
         self.handler = None
         self.httpserver = None
-        self.devices = {}
+        self.devices: Dict[str, UPNPRootDevice] = {}
 
         self.events = events.EventsServer(loop=self.loop, http=self.http)
 
@@ -170,15 +171,16 @@ class UPNPServer(ssdp.SSDPServer):
             await self.handler.shutdown(60.0)
             await self.http.cleanup()
 
-    async def parse_description(self, url):
+    async def parse_description(self, url: str) -> Optional[dlna.Element]:
         try:
             async with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop), read_timeout=5, raise_for_status=True) as session:
                 async with session.get(url) as resp:
+                    assert resp._protocol
                     data = await resp.read()
                     spec = dlna.didl.fromString(data)
                     device = spec.find('device')
-                    localhost = xml.SubElement(device, xml.QName(device.nsmap[None], 'localhost'))
-                    localhost.text = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
+                    _localhost = xml.SubElement(device, xml.QName(device.nsmap[None], 'localhost'), attrib=None, nsmap=None)
+                    _localhost.text = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
                     return device
         except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
             self.log.warning('%s: %s', err.__class__.__name__, err)
@@ -186,21 +188,21 @@ class UPNPServer(ssdp.SSDPServer):
 
     async def device_created(self, device=None):
         self.log.warning('create %s', device)
-        description = await self.parse_description(device.get('location'))
+        description = await self.parse_description(device['location'])
         if description is not None:
-            self.devices[device.get('usn')] = UPNPRootDevice(description, device, self.events)
+            self.devices[device['usn']] = UPNPRootDevice(description, device, self.events)
 
     async def device_removed(self, device=None):
         self.log.warning('remove %s', device)
         if device.get('usn') in self.devices:
-            upnpdevice = self.devices.pop(device.get('usn'))
+            upnpdevice = self.devices.pop(device['usn'])
             notify.send('UPnP.RootDevice.removed', device=upnpdevice)
             await upnpdevice.shutdown()
 
     async def device_updated(self, device=None):
         self.log.warning('update %s', device)
         if device.get('usn') in self.devices:
-            upnpdevice = self.devices.get(device.get('usn'))
+            upnpdevice = self.devices[device['usn']]
             upnpdevice._ssdp = device
             await upnpdevice.update_callback()
         else:
