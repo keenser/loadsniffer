@@ -12,9 +12,9 @@ import os
 import asyncio
 import logging
 import binascii
-from typing import Dict, NamedTuple, Optional
+from typing import Dict, NamedTuple, Optional, cast
 import aiofiles
-from aiohttp import web
+from aiohttp import web, http_writer
 import libtorrent
 import socket
 import json
@@ -611,7 +611,8 @@ class TorrentStream:
                 class StreamResponse(web.StreamResponse):
                     async def write(self, data):
                         self.resume()
-                        if not self._payload_writer.transport.is_closing():
+                        transport = cast(http_writer.StreamWriter, self._payload_writer).transport
+                        if transport and not transport.is_closing():
                             await super().write(data)
 
                     @staticmethod
