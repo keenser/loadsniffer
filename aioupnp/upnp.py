@@ -17,7 +17,7 @@ from . import notify
 from . import ssdp
 from . import dlna
 from . import events
-from typing import Dict, Optional
+from typing import Dict, List, Optional, cast
 from functools import cached_property
 
 
@@ -38,8 +38,8 @@ class UPNPDevice:
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self._description = description
         self._parent_device = parent
-        self._device_list = []
-        self._service_list = {}
+        self._device_list: List[UPNPDevice] = []
+        self._service_list: Dict[str, dlna.DLNAService] = {}
         for service in self._description.iterfind('serviceList/service'):
             servicetype = self.getName(service.find('serviceType').text)
             if servicetype == 'AVTransport':
@@ -66,18 +66,18 @@ class UPNPDevice:
             await service.resubscribe()
 
     @staticmethod
-    def getName(typename):
+    def getName(typename:str):
         try:
             return typename.split(':')[-2]
         except IndexError:
             return typename
 
     @property
-    def root(self):
+    def root(self) -> UPNPDevice:
         return self._parent_device
 
     @property
-    def ssdp(self):
+    def ssdp(self) -> ssdp.SSDPDevice:
         return self.root.ssdp
 
     @property
@@ -86,11 +86,11 @@ class UPNPDevice:
 
     @property
     def location(self):
-        return self.ssdp.get('location')
+        return self.ssdp['location']
 
     @cached_property
-    def deviceType(self):
-        return self._description.get('deviceType')
+    def deviceType(self) -> str:
+        return self._description.get('deviceType') or ''
 
     @cached_property
     def friendlyDeviceType(self):
@@ -100,27 +100,23 @@ class UPNPDevice:
     def friendlyName(self):
         return self._description.get('friendlyName')
 
-    def service(self, name):
+    def service(self, name:str):
         return self._service_list.get(name)
 
     @property
-    def events(self):
+    def events(self) -> events.EventsServer:
         return self.root.events
 
     @cached_property
-    def localhost(self):
-        return self.root._description.get('localhost')
+    def localhost(self) -> str:
+        return self.root._description.get('localhost') or ''
 
 
 class UPNPRootDevice(UPNPDevice):
-    def __init__(self, description, ssdp, events):
+    def __init__(self, description:dlna.Element, ssdp:ssdp.SSDPDevice, events:events.EventsServer):
         self._ssdp = ssdp
         self._events = events
         super().__init__(description=description, parent=self)
-
-    # @property
-    # def root(self):
-    #     return self
 
     @property
     def ssdp(self):
@@ -171,34 +167,36 @@ class UPNPServer(ssdp.SSDPServer):
             await self.handler.shutdown(60.0)
             await self.http.cleanup()
 
-    async def parse_description(self, url: str) -> Optional[dlna.Element]:
+    async def parse_description(self, url:str) -> Optional[dlna.Element]:
         try:
             async with aiohttp.ClientSession(connector=TCPConnector(loop=self.loop), read_timeout=5, raise_for_status=True) as session:
                 async with session.get(url) as resp:
                     data = await resp.read()
                     spec = dlna.didl.fromString(data)
                     device = spec.find('device')
+                    assert resp._protocol
+                    protocol = cast(ResponseHandler, resp._protocol)
                     _localhost = xml.SubElement(device, xml.QName(device.nsmap[None], 'localhost'), attrib=None, nsmap=None)
-                    _localhost.text = 'http://{}:{}/'.format(resp._protocol.localhost[0], self.httpport)
+                    _localhost.text = 'http://{}:{}/'.format(protocol.localhost[0], self.httpport)
                     return device
         except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
             self.log.warning('%s: %s', err.__class__.__name__, err)
             return
 
-    async def device_created(self, device=None):
+    async def device_created(self, device):
         self.log.warning('create %s', device)
         description = await self.parse_description(device['location'])
         if description is not None:
             self.devices[device['usn']] = UPNPRootDevice(description, device, self.events)
 
-    async def device_removed(self, device=None):
+    async def device_removed(self, device):
         self.log.warning('remove %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices.pop(device['usn'])
             notify.send('UPnP.RootDevice.removed', device=upnpdevice)
             await upnpdevice.shutdown()
 
-    async def device_updated(self, device=None):
+    async def device_updated(self, device):
         self.log.warning('update %s', device)
         if device.get('usn') in self.devices:
             upnpdevice = self.devices[device['usn']]

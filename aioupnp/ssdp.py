@@ -18,7 +18,7 @@ SSDP_PORT = 1900
 SSDP_ADDR = '239.255.255.250'
 
 
-class SSDPDevice(dict):
+class SSDPDevice(Dict[str, str]):
     render_headers = ['nts', 'usn', 'nt', 'location', 'server', 'cache-control']
 
     def __init__(self, server:SSDPServer, data={}):

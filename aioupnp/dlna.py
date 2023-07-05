@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Callable, Dict, Optional
 from . import upnp
+from . import events
 import urllib.parse
 import aiohttp
 import lxml.etree as xml
@@ -77,8 +78,8 @@ class DIDLLite:
         return _resource
 
     @staticmethod
-    def toString(data):
-        return xml.tostring(data, encoding='utf8', xml_declaration=True).decode()
+    def toString(data:xml.ElementBase, **kwargs) -> str:
+        return xml.tostring(data, encoding='utf8', xml_declaration=True, **kwargs).decode() # type: ignore
 
     def fromString(self, data) -> Element:
         return xml.fromstring(data, self.parser)
@@ -88,7 +89,7 @@ didl = DIDLLite()
 
 
 class DLNAAction:
-    def __init__(self, service, action):
+    def __init__(self, service:DLNAService, action:str):
         self.service = service
         self.action = action
 
@@ -105,7 +106,7 @@ class DLNAAction:
         for name, val in data.items():
             xml.SubElement(a, name, attrib=None, nsmap=None).text = str(val)
 
-        datastr = xml.tostring(e, encoding='utf8', xml_declaration=True, pretty_print=False).decode()
+        datastr = didl.toString(e, pretty_print=False)
 
         async with aiohttp.ClientSession(read_timeout=5, raise_for_status=True) as session:
             async with session.post(url, data=datastr,
@@ -118,26 +119,26 @@ class DLNAAction:
 
 
 class DLNAService:
-    def __init__(self, device: upnp.UPNPDevice, service):
+    def __init__(self, device: upnp.UPNPDevice, service:Element):
         self.service = service
         self.device = device
         self.events_subscription = False
-        self.callbacks = {}
+        self.callbacks: Dict[str, Callable[[events.Event], None]] = {}
 
-    def action(self, action):
+    def action(self, action:str):
         return DLNAAction(self, action)
 
     async def shutdown(self):
         if self.events_subscription:
             await self.device.events.unsubscribe(self.uid)
 
-    async def eventscallback(self, data):
+    async def eventscallback(self, data: Dict[str, events.Event]):
         for variable, callback in self.callbacks.items():
-            event = data.get(variable)
+            event = data[variable]
             event.service = self
             callback(event)
 
-    def subscribe(self, variable, callback):
+    def subscribe(self, variable, callback:Callable[[events.Event], None]):
         self.callbacks[variable] = callback
         if self.events_subscription is False:
             self.events_subscription = True
@@ -148,7 +149,7 @@ class DLNAService:
             await self.device.events.unsubscribe(self.uid)
             self.device.events.subscribe(self, self.eventscallback)
 
-    def get(self, name):
+    def get(self, name:str):
         return self.service.get(name)
 
     @property
@@ -156,8 +157,8 @@ class DLNAService:
         return self.device.location
 
     @property
-    def serviceType(self):
-        return self.get('serviceType')
+    def serviceType(self) -> str:
+        return self.get('serviceType') or ''
 
     @property
     def url(self):
