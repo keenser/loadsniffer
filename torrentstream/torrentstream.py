@@ -12,7 +12,7 @@ import os
 import asyncio
 import logging
 import binascii
-from typing import Dict, NamedTuple
+from typing import Dict, NamedTuple, Optional
 import aiofiles
 from aiohttp import web
 import libtorrent
@@ -22,8 +22,12 @@ import json
 class FileInfo(NamedTuple):
     id: int
     handle: libtorrent.torrent_handle
-    info: libtorrent.torrent_info
+    info: libtorrent.file_entry
 
+class Piece(NamedTuple):
+    length: int
+    piece: int
+    start: int
 
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
@@ -35,8 +39,8 @@ class DynamicTorrentProducer:
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
         self.lastoffset = self.offset + self.size - 1
-        self.priority_window = None
-        self.piece = None
+        self.priority_window:int
+        self.piece:Piece
         self.buffer = {}
         self.log.info("starting %s offset: %d size: %d", self.fileinfo.info.path, self.offset, self.size)
 
@@ -105,7 +109,7 @@ class DynamicTorrentProducer:
         self.fileinfo.handle.resume()
         self._slide(self.piece.piece)
 
-    def _slide(self, offset=None):
+    def _slide(self, offset:Optional[int]=None):
         if offset is not None:
             self.priority_window = offset
         window = self.priority_window
@@ -348,7 +352,7 @@ class TorrentStream:
         self.loop.add_reader(self.rfile, self._handle_alert)
         self.session.set_alert_fd(self.wfile.fileno())
 
-        for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
+        for file in glob.glob(self.options['save_path'] + '/*.fastresume'):
             try:
                 if os.path.exists(file):
                     with open(file, 'rb') as fd:
@@ -412,7 +416,7 @@ class TorrentStream:
         elif url:
             add_torrent_params = libtorrent.add_torrent_params()
             add_torrent_params.url = url
-            add_torrent_params.save_path = self.options.get('save_path')
+            add_torrent_params.save_path = self.options['save_path']
             add_torrent_params.storage_mode = libtorrent.storage_mode_t.storage_mode_sparse
         if add_torrent_params:
             add_torrent_params.flags &= ~libtorrent.add_torrent_params_flags_t.flag_auto_managed
