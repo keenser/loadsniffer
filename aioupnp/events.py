@@ -3,6 +3,7 @@
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 # TODO: periodic subscribe
 
+from __future__ import annotations
 import asyncio
 import logging
 import aiohttp
