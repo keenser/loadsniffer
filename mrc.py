@@ -93,7 +93,7 @@ class UPnPctrl:
     async def transporturi(self, url, title='Video', relative=False):
         if self.device:
             if relative:
-                self.log.debug('local: %s url: %s', self.device.media.localhost, url)
+                self.log.debug('local: %s url: %s location: %s', self.device.media.localhost, url, self.device.media.location)
                 url = urllib.parse.urljoin(self.device.media.localhost, url)
             try:
                 async with aiohttp.ClientSession(timeout=aiohttp.client.ClientTimeout(connect=5)) as session:

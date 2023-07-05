@@ -174,7 +174,7 @@ class UPNPServer(ssdp.SSDPServer):
                     data = await resp.read()
                     spec = dlna.didl.fromString(data)
                     device = spec.find('device')
-                    assert resp._protocol
+                    assert resp._protocol is not None
                     protocol = cast(ResponseHandler, resp._protocol)
                     _localhost = xml.SubElement(device, xml.QName(device.nsmap[None], 'localhost'), attrib=None, nsmap=None)
                     _localhost.text = 'http://{}:{}/'.format(protocol.localhost[0], self.httpport)
