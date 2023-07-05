@@ -143,6 +143,7 @@ class SSDPServer:
         self.resend_mseatch_loop: asyncio.Task
         self.transport = None
         self.ucastprotocol = None
+        self.st_msearch = 'upnp:rootdevice'
 
         mcast = self.loop.create_datagram_endpoint(
             lambda: SSDPMcastProtocol(self),
@@ -220,7 +221,7 @@ class SSDPServer:
                'HOST: %s:%d' % (SSDP_ADDR, SSDP_PORT),
                'MAN: "ssdp:discover"',
                'MX: 5',
-               'ST: ssdp:all',
+               'ST: {}'.format(self.st_msearch),
                'USER-AGENT: {}/{}'.format(__name__, version),
                '', '']
         req = '\r\n'.join(req)

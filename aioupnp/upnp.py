@@ -101,7 +101,7 @@ class UPNPDevice:
         return self._description.get('friendlyName')
 
     def service(self, name:str):
-        return self._service_list.get(name)
+        return self._service_list[name]
 
     @property
     def events(self) -> events.EventsServer:

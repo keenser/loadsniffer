@@ -10,21 +10,24 @@ import mimetypes
 import glob
 import os
 import asyncio
-from collections import namedtuple
 import logging
 import binascii
+from typing import Dict, NamedTuple
 import aiofiles
 from aiohttp import web
 import libtorrent
 import socket
 import json
 
-FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
+class FileInfo(NamedTuple):
+    id: int
+    handle: libtorrent.torrent_handle
+    info: libtorrent.torrent_info
 
 
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
-    def __init__(self, stream, request, fileinfo, offset=0, size=None):
+    def __init__(self, stream, request, fileinfo:FileInfo, offset=0, size=None):
         self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
         self.stream = stream
         self.request = request
@@ -223,13 +226,13 @@ class TorrentStream:
     NORMAL = 4
     HIGHEST = 7
 
-    def __init__(self, **options):
+    def __init__(self, loop=None, **options:str):
         self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
         self.options.setdefault('save_path', '/tmp/')
-        self.loop = options.get('loop', asyncio.get_event_loop())
+        self.loop = loop or asyncio.get_event_loop()
 
         self.http = web.Application()
         self.http.router.add_get('/{action:.*}', self.render_GET)
@@ -473,7 +476,7 @@ class TorrentStream:
     def list_files(self):
         """list available files in torrents"""
         directory = []
-        files_list = {}
+        files_list:Dict[str, FileInfo] = {}
         for handle in self.session.get_torrents():
             if handle.is_valid():
                 data = {
