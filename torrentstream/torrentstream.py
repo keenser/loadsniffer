@@ -5,7 +5,7 @@
 """
 torrent to http proxy module
 """
-
+from __future__ import annotations
 import mimetypes
 import glob
 import os
@@ -31,10 +31,10 @@ class Piece(NamedTuple):
 
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
-    def __init__(self, stream, request, fileinfo:FileInfo, offset=0, size=None):
+    def __init__(self, stream:TorrentStream, response:web.StreamResponse, fileinfo:FileInfo, offset=0, size:Optional[int]=None):
         self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
         self.stream = stream
-        self.request = request
+        self.response = response
         self.fileinfo = fileinfo
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
@@ -47,17 +47,17 @@ class DynamicTorrentProducer:
     def _read_piece_alert(self, alert):
         self.log.debug("read_piece_alert %d %d", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
-        self.request.resume()
+        self.response.resume()
 
     def _piece_finished_alert(self, alert):
         self._slide()
-        self.request.resume()
+        self.response.resume()
 
     async def _read_piece(self):
         self.log.debug("read_piece %d %d %d", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
         buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset]
-        await self.request.write(buffer)
-        await self.request.drain()
+        await self.response.write(buffer)
+        await self.response.drain()
         self.offset += len(buffer)
         del self.buffer[self.piece.piece]
 
@@ -142,8 +142,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
             if data:
                 self.offset += len(data)
-                await self.request.write(data)
-                await self.request.drain()
+                await self.response.write(data)
+                await self.response.drain()
             del data
 
             if self.offset < self.lastoffset:
@@ -167,8 +167,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
         if data:
             self.offset += len(data)
-            await self.request.write(data)
-            await self.request.drain()
+            await self.response.write(data)
+            await self.response.drain()
 
         if self.offset < self.lastoffset:
             # move to next piece
