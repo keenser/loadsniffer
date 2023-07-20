@@ -18,13 +18,13 @@ from . import dlna
 
 
 class Event:
-    def __init__(self, name):
+    def __init__(self, name:str):
         self.name = name
         self.value = None
         self.old_value = None
         self.service: Optional[dlna.DLNAService] = None
 
-    def update(self, data):
+    def update(self, data:str):
         self.old_value = self.value
         self.value = data
 
@@ -36,7 +36,7 @@ class Event:
 
 
 class EventsServer:
-    def __init__(self, loop, http):
+    def __init__(self, loop:asyncio.AbstractEventLoop, http:aiohttp.web.Application):
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.loop = loop
 
@@ -74,10 +74,10 @@ class EventsServer:
         for uid in list(self.running_tasks.keys()):
             await self.unsubscribe(uid)
 
-    def subscribe(self, service: dlna.DLNAService, callback: Callable[[Dict[str, Event]], Awaitable[None]]) -> None:
+    def subscribe(self, service:dlna.DLNAService, callback:Callable[[Dict[str, Event]], Awaitable[None]]) -> None:
         self.running_tasks[service.uid] = self.loop.create_task(self._event_task(service, callback))
 
-    async def unsubscribe(self, uid: str) -> None:
+    async def unsubscribe(self, uid:str) -> None:
         if uid in self.running_tasks:
             task = self.running_tasks.pop(uid)
             if task:
