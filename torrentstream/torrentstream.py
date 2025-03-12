@@ -5,52 +5,59 @@
 """
 torrent to http proxy module
 """
-
+from __future__ import annotations
 import mimetypes
 import glob
 import os
 import asyncio
-from collections import namedtuple
 import logging
 import binascii
+from typing import Dict, NamedTuple, Optional, cast
 import aiofiles
-from aiohttp import web
+from aiohttp import web, http_writer
 import libtorrent
 import socket
 import json
 
-FileInfo = namedtuple('FileInfo', ('id', 'handle', 'info'))
+class FileInfo(NamedTuple):
+    id: int
+    handle: libtorrent.torrent_handle
+    info: libtorrent.file_entry
 
+class Piece(NamedTuple):
+    length: int
+    piece: int
+    start: int
 
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
-    def __init__(self, stream, request, fileinfo, offset=0, size=None):
+    def __init__(self, stream:TorrentStream, response:web.StreamResponse, fileinfo:FileInfo, offset=0, size:Optional[int]=None):
         self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
         self.stream = stream
-        self.request = request
+        self.response = response
         self.fileinfo = fileinfo
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
         self.lastoffset = self.offset + self.size - 1
-        self.priority_window = None
-        self.piece = None
+        self.priority_window:int
+        self.piece:Piece
         self.buffer = {}
         self.log.info("starting %s offset: %d size: %d", self.fileinfo.info.path, self.offset, self.size)
 
     def _read_piece_alert(self, alert):
         self.log.debug("read_piece_alert %d %d", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
-        self.request.resume()
+        self.response.resume()
 
     def _piece_finished_alert(self, alert):
         self._slide()
-        self.request.resume()
+        self.response.resume()
 
     async def _read_piece(self):
         self.log.debug("read_piece %d %d %d", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
         buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset]
-        await self.request.write(buffer)
-        await self.request.drain()
+        await self.response.write(buffer)
+        await self.response.drain()
         self.offset += len(buffer)
         del self.buffer[self.piece.piece]
 
@@ -102,7 +109,7 @@ class DynamicTorrentProducer:
         self.fileinfo.handle.resume()
         self._slide(self.piece.piece)
 
-    def _slide(self, offset=None):
+    def _slide(self, offset:Optional[int]=None):
         if offset is not None:
             self.priority_window = offset
         window = self.priority_window
@@ -135,8 +142,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
             if data:
                 self.offset += len(data)
-                await self.request.write(data)
-                await self.request.drain()
+                await self.response.write(data)
+                await self.response.drain()
             del data
 
             if self.offset < self.lastoffset:
@@ -160,8 +167,8 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
         if data:
             self.offset += len(data)
-            await self.request.write(data)
-            await self.request.drain()
+            await self.response.write(data)
+            await self.response.drain()
 
         if self.offset < self.lastoffset:
             # move to next piece
@@ -223,13 +230,13 @@ class TorrentStream:
     NORMAL = 4
     HIGHEST = 7
 
-    def __init__(self, **options):
+    def __init__(self, loop=None, **options:str):
         self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
         self.options.setdefault('save_path', '/tmp/')
-        self.loop = options.get('loop', asyncio.get_event_loop())
+        self.loop = loop or asyncio.get_event_loop()
 
         self.http = web.Application()
         self.http.router.add_get('/{action:.*}', self.render_GET)
@@ -258,6 +265,9 @@ class TorrentStream:
 
         session.add_dht_router("router.bittorrent.com", 6881)
         session.add_dht_router("router.utorrent.com", 6881)
+        session.add_dht_router("dht.transmissionbt.com", 6881)
+        session.add_dht_router("router.bitcomet.com", 6881)
+        session.add_dht_router("dht.aelitis.com", 6881)
 
         encryption_settings = libtorrent.pe_settings()
         encryption_settings.out_enc_policy = libtorrent.enc_policy(libtorrent.enc_policy.forced)
@@ -345,7 +355,7 @@ class TorrentStream:
         self.loop.add_reader(self.rfile, self._handle_alert)
         self.session.set_alert_fd(self.wfile.fileno())
 
-        for file in glob.glob(self.options.get('save_path') + '/*.fastresume'):
+        for file in glob.glob(self.options['save_path'] + '/*.fastresume'):
             try:
                 if os.path.exists(file):
                     with open(file, 'rb') as fd:
@@ -409,7 +419,7 @@ class TorrentStream:
         elif url:
             add_torrent_params = libtorrent.add_torrent_params()
             add_torrent_params.url = url
-            add_torrent_params.save_path = self.options.get('save_path')
+            add_torrent_params.save_path = self.options['save_path']
             add_torrent_params.storage_mode = libtorrent.storage_mode_t.storage_mode_sparse
         if add_torrent_params:
             add_torrent_params.flags &= ~libtorrent.add_torrent_params_flags_t.flag_auto_managed
@@ -473,7 +483,7 @@ class TorrentStream:
     def list_files(self):
         """list available files in torrents"""
         directory = []
-        files_list = {}
+        files_list:Dict[str, FileInfo] = {}
         for handle in self.session.get_torrents():
             if handle.is_valid():
                 data = {
@@ -604,8 +614,10 @@ class TorrentStream:
                 class StreamResponse(web.StreamResponse):
                     async def write(self, data):
                         self.resume()
-                        if not self._payload_writer.transport.is_closing():
+                        try:
                             await super().write(data)
+                        except ConnectionError:
+                            pass
 
                     @staticmethod
                     def resume():

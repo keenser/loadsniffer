@@ -195,7 +195,7 @@ var addSingleLink = function(line, textcontent, url, title, cookie, localurl, id
 	}
         copyToClipboard(relativeurl);
         let video = document.getElementById("video");
-        if(video !== undefined && video.className === 'active') {
+        if(video !== undefined && video.classList.contains('active')) {
             fetchSimilarHeaders(url, function(headers) {
                 video.setAttribute('src', relativeurl);
                 video.setAttribute('type', headers['content-type']);
@@ -316,7 +316,7 @@ var UpdateUPNPStatus = function(data) {
     else {
         let video = document.getElementById("video")
         if(video !== undefined && video !== null) {
-            video.className = 'active';
+            video.classList.add('active');
         }
     }
 }

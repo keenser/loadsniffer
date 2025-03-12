@@ -4,6 +4,7 @@
 #
 # Media Renderer control server
 
+from __future__ import annotations
 import asyncio
 import uvloop
 import json
@@ -21,6 +22,7 @@ import aiohttp.web
 import aiohttp.client_exceptions
 import aioupnp
 import torrentstream
+import telnetlib3
 from typing import Optional
 from io import StringIO
 import contextlib
@@ -53,12 +55,12 @@ class UPnPctrl:
         self.log = logging.getLogger(self.__class__.__name__)
 
         self.loop = loop or asyncio.get_event_loop()
-        self.aioupnp = aioupnp.upnp.UPNPServer(loop=self.loop, http=http, httpport=httpport)
-        aioupnp.notify.connect('UPnP.Device.detection_completed', self._media_renderer_found)
-        aioupnp.notify.connect('UPnP.RootDevice.removed', self._media_renderer_removed)
+        self.aioupnp = aioupnp.UPNPServer(loop=self.loop, http=http, httpport=httpport)
+        aioupnp.connect('UPnP.Device.detection_completed', self._media_renderer_found)
+        aioupnp.connect('UPnP.RootDevice.removed', self._media_renderer_removed)
 
         self.mediadevices = {}
-        self.device = None
+        self.device:Optional[MediaDevice] = None
         self.registered_callbacks = {}
 
     async def _media_renderer_removed(self, device: aioupnp.UPNPDevice) -> None:
@@ -93,7 +95,7 @@ class UPnPctrl:
     async def transporturi(self, url, title='Video', relative=False):
         if self.device:
             if relative:
-                self.log.debug('local: %s url: %s', self.device.media.localhost, url)
+                self.log.debug('local: %s url: %s location: %s', self.device.media.localhost, url, self.device.media.location)
                 url = urllib.parse.urljoin(self.device.media.localhost, url)
             try:
                 async with aiohttp.ClientSession(timeout=aiohttp.client.ClientTimeout(connect=5)) as session:
@@ -147,7 +149,7 @@ class UPnPctrl:
             self.log.debug('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
             if variable.value is not None and variable.value:
                 try:
-                    elt = aioupnp.dlna.didl.fromString(variable.value)
+                    elt = aioupnp.didl.fromString(variable.value)
                     self.mediadevices[usn].status['item'] = []
                     url = elt.get('item/res') if elt.get('item/res') is not None else elt.find('item').attrib.get('id')
                     self.log.info('now playing: %s %s', elt.get('item/dc:title'), url)
@@ -271,7 +273,15 @@ class Info:
 
 
 class WebSocketFactory:
-    def __init__(self, loop=None, factory=None, upnp=None, torrent=None, peer=None, local=None, ws=None):
+    def __init__(self,
+                 loop:Optional[asyncio.AbstractEventLoop]=None,
+                 factory:Optional[WebSocketFactory]=None,
+                 upnp:Optional[UPnPctrl]=None,
+                 torrent:Optional[torrentstream.TorrentStream]=None,
+                 peer:Optional[str]=None,
+                 local:Optional[str]=None,
+                 ws:Optional[aiohttp.web.WebSocketResponse]=None
+        ):
         self.log = logging.getLogger(self.__class__.__name__)
         self._factory = factory
         self._upnp = upnp
@@ -286,18 +296,20 @@ class WebSocketFactory:
         super().__init__()
 
     @property
-    def factory(self):
+    def factory(self) -> WebSocketFactory:
         return self._factory or self
 
     @property
     def upnp(self):
+        assert self.factory._upnp
         return self.factory._upnp
 
     @property
     def torrent(self):
+        assert self.factory._torrent
         return self.factory._torrent
 
-    async def websocket_handler(self, request):
+    async def websocket_handler(self, request:aiohttp.web.Request):
         self.log.debug('websocket_handler %s %s', request.remote, request.host)
 
         ws = aiohttp.web.WebSocketResponse()
@@ -312,9 +324,9 @@ class WebSocketFactory:
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
-                    request = json.loads(msg.data)
-                    data = request.pop('request', {})
-                    await wsclient.onMessage(request, request.get('action'), data)
+                    req = json.loads(msg.data)
+                    data = req.pop('request', {})
+                    await wsclient.onMessage(req, req.get('action'), data)
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
         except (OSError, TimeoutError):
@@ -341,7 +353,7 @@ class WebSocketFactory:
             for i in self.videofiles(handle['files']):
                 i['title'] = os.path.basename(i['path'])
                 i['url'] = urllib.parse.urljoin(
-                                self.torrent.options.get('urlpath'),
+                                self.torrent.options['urlpath'],
                                 urllib.parse.quote(i['path']))
         return infiles
 
@@ -373,7 +385,7 @@ class WebSocketFactory:
             await wsclient.ws.close(code=aiohttp.WSCloseCode.GOING_AWAY,
                                     message='Server shutdown')
 
-    async def sendMessage(self, message, request: dict = None) -> None:
+    async def sendMessage(self, message, request: Optional[dict] = None) -> None:
         if request is None:
             request = self._msg
         if request:
@@ -467,7 +479,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format=logformat)
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.get_event_loop()
-    aioupnp.notify.loop(loop)
+    aioupnp.loop(loop)
 
     def exception_handler(loop, context):
         logging.error('exception_handler: %s', context)
@@ -478,7 +490,7 @@ def main():
 
     logging.getLogger('UPnPctrl').setLevel(logging.INFO)
     logging.getLogger('WebSocketFactory').setLevel(logging.INFO)
-    logging.getLogger('torrent').setLevel(logging.INFO)
+    logging.getLogger('torrent').setLevel(logging.DEBUG)
     logging.getLogger('aioupnp').setLevel(logging.INFO)
     logging.getLogger('aiohttp.access').setLevel(logging.WARN)
 
@@ -509,12 +521,12 @@ def main():
     class console(asyncio.Protocol):
         def __init__(self):
             super().__init__()
-            self.transport = None
+            self.transport:asyncio.Transport
             self.torrent = torrent
             self.upnp = upnp
             self.ws = ws
 
-        def connection_made(self, transport):
+        def connection_made(self, transport:asyncio.Transport):
             self.transport = transport
 
         def data_received(self, data):
@@ -525,7 +537,50 @@ def main():
                     self.transport.write('{}\n'.format(e).encode())
                 self.transport.write('{}\n'.format(s.getvalue()).encode())
 
-    cons = loop.run_until_complete(loop.create_server(console, '127.0.0.1', 8888))
+
+    async def shell(reader, writer):
+        """
+        A default telnet shell, appropriate for use with telnetlib3.create_server.
+
+        This shell provides a very simple REPL, allowing introspection and state
+        toggling of the connected client session.
+        """
+        nonlocal upnp, torrent, ws
+        CR = telnetlib3.server_shell.CR
+        LF = telnetlib3.server_shell.LF
+        writer.write("Ready." + CR + LF)
+
+        linereader = telnetlib3.server_shell.readline(reader, writer)
+        linereader.send(None)
+
+        command = None
+        while True:
+            if command:
+                writer.write(CR + LF)
+            writer.write("tel:sh> ")
+            command = None
+            while command is None:
+                await writer.drain()
+                inp = await reader.read(1)
+                if not inp:
+                    return
+                command = linereader.send(inp)
+            writer.write(CR + LF)
+            if command == "quit":
+                writer.write("Goodbye." + CR + LF)
+                break
+            else:
+                with stdoutIO() as s:
+                    try:
+                        exec(command)
+                    except Exception as e:
+                        writer.write('{}\n'.format(e))
+                    writer.write('{}\n'.format(s.getvalue()))
+
+        writer.close()
+
+    #cons = loop.run_until_complete(loop.create_server(console, '127.0.0.1', 8888))
+    cons = loop.run_until_complete(telnetlib3.create_server(port=8888, shell=shell))
 
     try:
         loop.run_forever()

@@ -3,12 +3,13 @@
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 # TODO: periodic subscribe
 
+from __future__ import annotations
 import asyncio
 import logging
 import aiohttp
 import aiohttp.web
 import aiohttp.client_exceptions
-from typing import Type, Awaitable, Callable, Dict
+from typing import Optional, Type, Awaitable, Callable, Dict
 import urllib.parse
 import lxml.etree as xml
 import time
@@ -17,13 +18,13 @@ from . import dlna
 
 
 class Event:
-    def __init__(self, name):
+    def __init__(self, name:str):
         self.name = name
         self.value = None
         self.old_value = None
-        self.service = None
+        self.service: Optional[dlna.DLNAService] = None
 
-    def update(self, data):
+    def update(self, data:str):
         self.old_value = self.value
         self.value = data
 
@@ -35,30 +36,30 @@ class Event:
 
 
 class EventsServer:
-    def __init__(self, loop, http):
+    def __init__(self, loop:asyncio.AbstractEventLoop, http:aiohttp.web.Application):
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.loop = loop
 
         self.events = {}
-        self.sidtoservice = {}
+        self.sidtoservice: Dict[str, dlna.DLNAService] = {}
         self.running_tasks = {}
         eventsapp = aiohttp.web.Application()
         eventsapp.router.add_route('*', '/', self.events_handler)
         http.add_subapp('/events/', eventsapp)
         http.on_shutdown.append(self.shutdown)
 
-    async def events_handler(self, request):
+    async def events_handler(self, request:aiohttp.web.Request) -> aiohttp.web.StreamResponse:
         if request.can_read_body:
             body = await request.read()
-            service = self.sidtoservice.get(request.headers.get('SID'))
-            self.log.debug('event %s %s', request.headers.get('SID'), service)
+            service = self.sidtoservice.get(request.headers['SID'])
+            self.log.debug('event %s %s', request.headers['SID'], service)
             if service:
                 events = self.events.setdefault(service.uid, {})
 
-                d = xml.fromstring(body)
+                d = xml.fromstring(body, parser=None)
                 lastchange = d.find('e:property/LastChange', d.nsmap)
                 if lastchange is not None:
-                    lastevents = xml.fromstring(lastchange.text)
+                    lastevents = xml.fromstring(lastchange.text, parser=None)
                     for lastevent in lastevents.iterfind('InstanceID/*', lastevents.nsmap):
                         tag = xml.QName(lastevent.tag)
                         event = events.setdefault(tag.localname, Event(tag.localname))
@@ -73,13 +74,10 @@ class EventsServer:
         for uid in list(self.running_tasks.keys()):
             await self.unsubscribe(uid)
 
-    def subscribe(self,
-                  service: Type[dlna.DLNAService],
-                  callback: Awaitable[Callable[[Dict[str, Event]], None]]
-                  ) -> None:
+    def subscribe(self, service:dlna.DLNAService, callback:Callable[[Dict[str, Event]], Awaitable[None]]) -> None:
         self.running_tasks[service.uid] = self.loop.create_task(self._event_task(service, callback))
 
-    async def unsubscribe(self, uid: str) -> None:
+    async def unsubscribe(self, uid:str) -> None:
         if uid in self.running_tasks:
             task = self.running_tasks.pop(uid)
             if task:
@@ -90,7 +88,7 @@ class EventsServer:
                     pass
                 self.log.info('task.cancel done %s', uid)
 
-    async def _event_task(self, service, callback):
+    async def _event_task(self, service:dlna.DLNAService, callback:Callable[[Dict[str, Event]], Awaitable[None]]):
         async with aiohttp.ClientSession(read_timeout=5, raise_for_status=True) as session:
             sid = None
             try:
@@ -107,9 +105,9 @@ class EventsServer:
                                                        'Date': time.ctime()
                                                    }) as resp:
 
-                            sid = resp.headers.get('SID')
+                            sid = resp.headers['SID']
                             # TODO: parse Second-1800
-                            timeout = int(''.join(filter(str.isdigit, resp.headers.get('TIMEOUT'))))
+                            timeout = int(''.join(filter(str.isdigit, resp.headers['TIMEOUT'])))
                             self.sidtoservice[sid] = service
                             notify.connect('UPnP.DLNA.Event.{}'.format(sid), callback)
                             self.log.warning('subscribe %s event SID:%s', service.friendlyName, sid)
