@@ -265,6 +265,9 @@ class TorrentStream:
 
         session.add_dht_router("router.bittorrent.com", 6881)
         session.add_dht_router("router.utorrent.com", 6881)
+        session.add_dht_router("dht.transmissionbt.com", 6881)
+        session.add_dht_router("router.bitcomet.com", 6881)
+        session.add_dht_router("dht.aelitis.com", 6881)
 
         encryption_settings = libtorrent.pe_settings()
         encryption_settings.out_enc_policy = libtorrent.enc_policy(libtorrent.enc_policy.forced)
