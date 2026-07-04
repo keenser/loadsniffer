@@ -268,6 +268,7 @@ class TorrentStream:
         session.add_dht_router("dht.transmissionbt.com", 6881)
         session.add_dht_router("router.bitcomet.com", 6881)
         session.add_dht_router("dht.aelitis.com", 6881)
+        session.add_dht_router("opentor.net", 6969)
 
         encryption_settings = libtorrent.pe_settings()
         encryption_settings.out_enc_policy = libtorrent.enc_policy(libtorrent.enc_policy.forced)
@@ -644,9 +645,11 @@ class TorrentStream:
                         resume.clear()
                         await producer.resumeProducing()
                         try:
-                            await asyncio.wait_for(resume.wait(), 5)
+                            await resume.wait()
                         except asyncio.TimeoutError:
                             pass
+                        if request.transport is None or request.transport.is_closing():
+                            break
                 except asyncio.CancelledError:
                     """raise for stopProducing"""
                     raise
