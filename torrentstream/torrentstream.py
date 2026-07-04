@@ -645,7 +645,7 @@ class TorrentStream:
                         resume.clear()
                         await producer.resumeProducing()
                         try:
-                            await resume.wait()
+                            await asyncio.wait_for(resume.wait(), 5)
                         except asyncio.TimeoutError:
                             pass
                         if request.transport is None or request.transport.is_closing():
