@@ -7,19 +7,18 @@
 from __future__ import annotations
 import asyncio
 import logging
-from typing import Awaitable, Callable, Dict, Optional, Set, Tuple
+from typing import Awaitable, Callable, Dict, Optional, Tuple
 
 from async_upnp_client.aiohttp import AiohttpNotifyServer, AiohttpRequester
 from async_upnp_client.client_factory import UpnpFactory
+from async_upnp_client.const import SsdpSource
 from async_upnp_client.event_handler import UpnpEventHandlerRegister
 from async_upnp_client.exceptions import UpnpError
 from async_upnp_client.profiles.dlna import DmrDevice
-from async_upnp_client.search import async_search
-from async_upnp_client.ssdp import SSDP_MX, SSDP_ST_ROOTDEVICE, udn_from_usn
-from async_upnp_client.utils import CaseInsensitiveDict
+from async_upnp_client.ssdp import SSDP_ST_ROOTDEVICE
+from async_upnp_client.ssdp_listener import SsdpListener
 
-RESEARCH_INTERVAL = 30
-MISSED_ROUNDS_BEFORE_REMOVE = 2
+RESEARCH_INTERVAL = 120
 
 DeviceCallback = Callable[[DmrDevice], Awaitable[None]]
 
@@ -27,12 +26,12 @@ DeviceCallback = Callable[[DmrDevice], Awaitable[None]]
 class RendererRegistry:
     """Discovers DLNA MediaRenderers on the LAN and hands out DmrDevice profiles for them.
 
-    Deliberately uses only *active* M-SEARCH polling (async_search), not a persistent
-    NOTIFY listener: a persistent listener would bind another SO_REUSEPORT socket to
-    0.0.0.0:1900, and on Linux that port is load-balanced by a 4-tuple hash across all
-    SO_REUSEPORT sockets bound to it - so a given remote host's M-SEARCH packets can end
-    up delivered only to this listener (which ignores M-SEARCH) instead of to
-    MediaServer's SsdpSearchResponder, which is the one that's supposed to answer them.
+    Uses SsdpListener (passive NOTIFY alive/byebye + active M-SEARCH), not just active
+    search: some real devices (e.g. certain LG WebOS TVs) inconsistently omit LOCATION
+    from individual M-SEARCH responses while including it reliably in their NOTIFY
+    alive announcements. SsdpListener's SsdpDevice also accumulates location from
+    *any* packet seen for a UDN rather than treating each packet in isolation, so a
+    single good packet (from either source) is enough to make the device usable.
     """
 
     def __init__(self,
@@ -45,16 +44,21 @@ class RendererRegistry:
         self.loop = loop or asyncio.get_event_loop()
         self._on_device_found = on_device_found
         self._on_device_removed = on_device_removed
-        self._source = source
 
         self._requester = AiohttpRequester()
         self._factory = UpnpFactory(self._requester)
         self._event_handlers = UpnpEventHandlerRegister(self._requester, AiohttpNotifyServer)
         self._devices: Dict[str, DmrDevice] = {}
-        self._missed_rounds: Dict[str, int] = {}
+        self._listener = SsdpListener(
+            async_callback=self._on_ssdp,
+            loop=self.loop,
+            search_target=SSDP_ST_ROOTDEVICE,
+            source=source,
+        )
         self._research_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
+        await self._listener.async_start()
         self._research_task = self.loop.create_task(self._research())
 
     async def stop(self) -> None:
@@ -66,59 +70,33 @@ class RendererRegistry:
                 pass
         for udn in list(self._devices):
             await self._remove_device(udn)
+        await self._listener.async_stop()
 
     async def async_search(self) -> None:
-        await self._search_round()
+        await self._listener.async_search()
 
     async def _research(self) -> None:
         while True:
-            await self._search_round()
+            await self.async_search()
             await asyncio.sleep(RESEARCH_INTERVAL)
 
-    async def _search_round(self) -> None:
-        seen: Set[str] = set()
-
-        async def on_response(headers: CaseInsensitiveDict) -> None:
-            await self._on_search_response(headers, seen)
-
-        try:
-            await async_search(
-                async_callback=on_response,
-                timeout=SSDP_MX,
-                search_target=SSDP_ST_ROOTDEVICE,
-                source=self._source,
-                loop=self.loop,
-            )
-        except UpnpError as err:
-            self.log.warning('search round failed: %s', err)
+    async def _on_ssdp(self, ssdp_device, device_or_service_type: str, source: SsdpSource) -> None:
+        if device_or_service_type != SSDP_ST_ROOTDEVICE:
             return
 
-        await self._reap(seen)
-
-    async def _reap(self, seen: Set[str]) -> None:
-        for udn in list(self._devices):
-            if udn in seen:
-                self._missed_rounds.pop(udn, None)
-                continue
-            missed = self._missed_rounds.get(udn, 0) + 1
-            if missed >= MISSED_ROUNDS_BEFORE_REMOVE:
-                self._missed_rounds.pop(udn, None)
-                await self._remove_device(udn)
-            else:
-                self._missed_rounds[udn] = missed
-
-    async def _on_search_response(self, headers: CaseInsensitiveDict, seen: Set[str]) -> None:
-        usn = headers.get_lower('usn')
-        udn = usn and udn_from_usn(usn)
-        if not udn:
-            return
-        seen.add(udn)
-
-        if udn in self._devices:
+        if source == SsdpSource.ADVERTISEMENT_BYEBYE:
+            await self._remove_device(ssdp_device.udn)
             return
 
-        location = headers.get_lower('location')
+        if source == SsdpSource.ADVERTISEMENT_UPDATE and ssdp_device.udn in self._devices:
+            await self._remove_device(ssdp_device.udn)
+
+        if ssdp_device.udn in self._devices:
+            return
+
+        location = ssdp_device.location
         if not location:
+            self.log.debug('%s seen but no LOCATION known yet (will retry on next packet)', ssdp_device.udn)
             return
 
         try:
