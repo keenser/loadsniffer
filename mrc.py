@@ -53,7 +53,8 @@ class UPnPctrl:
     def __init__(self,
                  loop: Optional[asyncio.AbstractEventLoop] = None,
                  http: Optional[aiohttp.web.Application] = None,
-                 httpport: int = 0
+                 httpport: int = 0,
+                 source: Optional[tuple] = None
                  ) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
 
@@ -63,6 +64,7 @@ class UPnPctrl:
             loop=self.loop,
             on_device_found=self._media_renderer_found,
             on_device_removed=self._media_renderer_removed,
+            source=source,
         )
 
         self.mediadevices: Dict[str, MediaDevice] = {}
@@ -466,7 +468,8 @@ def main():
         logformat = '%(asctime)s %(levelname)s:%(name)s: %(message)s'
     logging.basicConfig(level=logging.INFO, format=logformat)
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     def exception_handler(loop, context):
         logging.error('exception_handler: %s', context)
@@ -486,7 +489,10 @@ def main():
     save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
 
     def lan_ip() -> str:
-        """best-guess LAN-facing IP, used to build absolute URLs for DLNA clients browsing the MediaServer"""
+        """best-guess LAN-facing IP, used both to bind SSDP sockets to a concrete interface
+        (rather than 0.0.0.0, which is ambiguous for IP_ADD_MEMBERSHIP on multi-homed hosts,
+        e.g. any host that also runs Docker's own bridge interfaces) and to build absolute
+        URLs advertised to DLNA clients browsing the MediaServer"""
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             try:
                 probe.connect(('8.8.8.8', 80))
@@ -494,11 +500,13 @@ def main():
             except OSError:
                 return socket.gethostbyname(socket.gethostname())
 
+    host_ip = lan_ip()
+
     def content_containers():
         return [{'id': data['info_hash'], 'title': data['title']} for data in torrent.list_files()]
 
     def content_items(container_id):
-        base = 'http://{}:{}{}'.format(lan_ip(), httpport, torrent.options['urlpath'])
+        base = 'http://{}:{}{}'.format(host_ip, httpport, torrent.options['urlpath'])
         for data in torrent.list_files():
             if data['info_hash'] != container_id:
                 continue
@@ -511,7 +519,7 @@ def main():
         return []
 
     http = aiohttp.web.Application(middlewares=[rootindex])
-    upnp = UPnPctrl(loop=loop, http=http, httpport=httpport)
+    upnp = UPnPctrl(loop=loop, http=http, httpport=httpport, source=(host_ip, 0))
     torrent = torrentstream.TorrentStream(loop=loop, save_path=save_path, urlpath='/bt/')
     ws = WebSocketFactory(loop=loop, upnp=upnp, torrent=torrent)
     http.on_shutdown.append(ws.onShutdown)
@@ -520,6 +528,7 @@ def main():
         list_containers=content_containers,
         list_items=content_items,
         friendly_name='loadsniffer',
+        source=(host_ip, 0),
     )
     torrent.add_alert_handler('files_list_update_alert', lambda alert: mediaserver.on_files_changed())
 

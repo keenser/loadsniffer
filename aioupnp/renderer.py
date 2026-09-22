@@ -7,7 +7,7 @@
 from __future__ import annotations
 import asyncio
 import logging
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional, Tuple
 
 from async_upnp_client.aiohttp import AiohttpNotifyServer, AiohttpRequester
 from async_upnp_client.client_factory import UpnpFactory
@@ -29,8 +29,17 @@ class RendererRegistry:
     def __init__(self,
                  loop: Optional[asyncio.AbstractEventLoop] = None,
                  on_device_found: Optional[DeviceCallback] = None,
-                 on_device_removed: Optional[DeviceCallback] = None
+                 on_device_removed: Optional[DeviceCallback] = None,
+                 source: Optional[Tuple[str, int]] = None
                  ) -> None:
+        """`source`: (interface_ip, port) to bind SSDP sockets to.
+
+        Defaults to ('0.0.0.0', 0), i.e. "let the kernel pick the interface" for
+        IP_ADD_MEMBERSHIP/IP_MULTICAST_IF - which is ambiguous on multi-homed
+        hosts (e.g. any host also running Docker's own bridge interfaces) and can
+        silently join the multicast group on the wrong NIC. Pass the host's real
+        LAN IP explicitly there.
+        """
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.loop = loop or asyncio.get_event_loop()
         self._on_device_found = on_device_found
@@ -40,7 +49,12 @@ class RendererRegistry:
         self._factory = UpnpFactory(self._requester)
         self._event_handlers = UpnpEventHandlerRegister(self._requester, AiohttpNotifyServer)
         self._devices: Dict[str, DmrDevice] = {}
-        self._listener = SsdpListener(async_callback=self._on_ssdp, loop=self.loop, search_target=SSDP_ST_ROOTDEVICE)
+        self._listener = SsdpListener(
+            async_callback=self._on_ssdp,
+            loop=self.loop,
+            search_target=SSDP_ST_ROOTDEVICE,
+            source=source,
+        )
         self._research_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:

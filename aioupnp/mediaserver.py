@@ -11,7 +11,7 @@ import logging
 import socket
 import uuid
 import xml.etree.ElementTree as ET
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from didl_lite import didl_lite
 from async_upnp_client.const import DeviceInfo, ServiceInfo
@@ -224,8 +224,15 @@ class MediaServer:
                  list_containers: Callable[[], List[Dict]],
                  list_items: Callable[[str], List[Dict]],
                  friendly_name: str = 'loadsniffer',
-                 http_port: Optional[int] = None
+                 http_port: Optional[int] = None,
+                 source: Optional[Tuple[str, int]] = None
                  ) -> None:
+        """`source`: (interface_ip, port) to bind the HTTP+SSDP server to.
+
+        Also becomes the host in the advertised LOCATION/description URLs, so
+        '0.0.0.0' (the default if left unset) would advertise an unreachable
+        address to DLNA clients - pass the host's real LAN IP explicitly.
+        """
         self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
 
         udn = 'uuid:{}'.format(uuid.uuid5(uuid.NAMESPACE_DNS, 'loadsniffer-mediaserver-{}'.format(socket.gethostname())))
@@ -262,7 +269,7 @@ class MediaServer:
             },
         )
 
-        self._server = _Server(device_cls, source=('0.0.0.0', 0), http_port=http_port or _free_tcp_port())
+        self._server = _Server(device_cls, source=source or ('0.0.0.0', 0), http_port=http_port or _free_tcp_port())
 
     async def start(self) -> None:
         await self._server.async_start()

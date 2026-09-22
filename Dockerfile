@@ -11,9 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Not in Debian's repos; PEP 668 needs --break-system-packages on this base image.
+# PyPI project name is "python-didl-lite" (imports as didl_lite); async-upnp-client
+# already depends on it, listed here just to pin it explicitly.
 RUN pip3 install --no-cache-dir --break-system-packages \
         async-upnp-client \
-        didl-lite \
+        python-didl-lite \
         uvloop \
         telnetlib3
 
