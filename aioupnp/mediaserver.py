@@ -138,11 +138,20 @@ class ContentDirectoryService(UpnpServerService):
                 return self._to_didl_item(container_id, item)
         return None
 
+    # DLNA.ORG_OP=01 advertises time-based positioning/seek to the renderer;
+    # without it seek/rewind is disabled on many devices (e.g. LG WebOS) even
+    # when browsing the MediaServer. Matches the metadata used by
+    # UPnPctrl.transporturi() so playback behaves the same either way.
+    _DLNA_FEATURES = 'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'
+
     @staticmethod
     def _to_didl_item(container_id: str, item: Dict) -> didl_lite.Item:
         mime = item.get('mime') or 'application/octet-stream'
         item_cls = _ITEM_CLASS_BY_MAJOR_MIME.get(mime.split('/')[0], didl_lite.Item)
-        resource = didl_lite.Resource(uri=item['url'], protocol_info='http-get:*:{}:*'.format(mime))
+        protocol_info = 'http-get:*:{}:*'.format(mime)
+        if mime.startswith('video/'):
+            protocol_info = 'http-get:*:{}:{}'.format(mime, ContentDirectoryService._DLNA_FEATURES)
+        resource = didl_lite.Resource(uri=item['url'], protocol_info=protocol_info)
         return item_cls(
             id='{}/{}'.format(container_id, item['id']),
             parent_id=container_id,
