@@ -58,6 +58,7 @@ class ContentDirectoryService(UpnpServerService):
         'SearchCapabilities': create_state_var('string', default=''),
         'SortCapabilities': create_state_var('string', default=''),
         'SystemUpdateID': create_event_var('ui4', default='0', max_rate=1.0),
+        'ContainerUpdateIDs': create_event_var('string', default='', max_rate=1.0),
     }
 
     # Bound to real callables by MediaServer, per instance of the server.
@@ -113,8 +114,26 @@ class ContentDirectoryService(UpnpServerService):
         return {'Id': self.state_variable('SystemUpdateID').value}
 
     def bump_update_id(self) -> None:
-        state_var = self.state_variable('SystemUpdateID')
-        state_var.value = (state_var.value or 0) + 1
+        """Bump SystemUpdateID and ContainerUpdateIDs.
+
+        Both are evented state variables; updating them triggers NOTIFY to any
+        subscribed DLNA client, telling it the content tree changed and it
+        should refresh its listing.
+        """
+        system_update_id = (self.state_variable('SystemUpdateID').value or 0) + 1
+        self.state_variable('SystemUpdateID').value = system_update_id
+
+        # ContainerUpdateIDs is a CSV list of "ContainerID,UpdateID" pairs for
+        # the containers that changed. We bump every known container (plus the
+        # root "0") to the same value as SystemUpdateID.
+        container_ids = ['0']
+        for container in self._list_containers():
+            cid = container.get('id')
+            if cid is not None:
+                container_ids.append(str(cid))
+        self.state_variable('ContainerUpdateIDs').value = ','.join(
+            '{},{}'.format(cid, system_update_id) for cid in container_ids
+        )
 
     def _children(self, object_id: str) -> List[didl_lite.DidlObject]:
         if object_id == '0':
