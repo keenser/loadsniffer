@@ -123,7 +123,19 @@ class UPnPctrl:
                     await dmr.async_stop()
                 except UpnpError:
                     pass
-                await dmr.async_set_transport_uri(url, title)
+                # DLNA.ORG_OP=01 advertises time-based positioning/seek to the
+                # renderer. Without it (the library's default "*") seek/rewind
+                # is disabled on many devices (e.g. LG WebOS). Mirrors the old
+                # aioupnp setavtransporturi() behaviour.
+                meta_data = await dmr.construct_play_media_metadata(
+                    url,
+                    title,
+                    override_dlna_features=(
+                        'DLNA.ORG_OP=01;DLNA.ORG_CI=0;'
+                        'DLNA.ORG_FLAGS=01700000000000000000000000000000'
+                    ),
+                )
+                await dmr.async_set_transport_uri(url, title, meta_data=meta_data)
                 await dmr.async_play()
             except (UpnpError, OSError, asyncio.TimeoutError) as err:
                 self.log.warning('transporturi %s', err)
