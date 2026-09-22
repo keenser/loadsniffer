@@ -7,16 +7,20 @@
 # NOTE: no `from __future__ import annotations` here - async_upnp_client.server inspects
 # @callable_action methods' *real* runtime type objects (str/int) to match them against
 # declared state variables; postponed (string) annotations break that check.
+import asyncio
 import logging
 import socket
 import uuid
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
 from didl_lite import didl_lite
-from async_upnp_client.const import DeviceInfo, ServiceInfo
+from async_upnp_client.const import DeviceInfo, HttpRequest, ServiceInfo
+from async_upnp_client.exceptions import UpnpConnectionError
 from async_upnp_client.server import (
     EventSubscriber,
+    UpnpEventableStateVariable,
     UpnpServer,
     UpnpServerDevice,
     UpnpServerService,
@@ -68,6 +72,76 @@ class ContentDirectoryService(UpnpServerService):
                 sid,
             )
         return removed
+
+    async def async_send_events(self, subscriber: EventSubscriber | None = None) -> None:
+        """Send events to subscribers, tolerating unreachable callbacks.
+
+        The base implementation uses ``asyncio.gather()`` without
+        ``return_exceptions``, so one dead callback (e.g. a client that
+        subscribed but whose NOTIFY port no longer listens) makes the whole
+        delivery task raise and spam the log. Here each subscriber is delivered
+        independently: a failure is logged and the dead subscription is dropped
+        instead of breaking delivery to everyone else (like the TV).
+        """
+        logger = logging.getLogger('aioupnp.mediaserver')
+        if not subscriber:
+            # EventSubscriber.expiration uses offset-naive datetime.now(), so
+            # the comparison must use a naive timestamp too.
+            now = datetime.now()
+            subscribers = [sub for sub in self._subscribers if now < sub.expiration]
+            self._subscribers = subscribers
+            if not subscribers:
+                return
+        else:
+            subscribers = [subscriber]
+
+        event_el = ET.Element('e:propertyset')
+        event_el.set('xmlns:e', 'urn:schemas-upnp-org:event-1-0')
+        for state_var in self.state_variables.values():
+            if not isinstance(state_var, UpnpEventableStateVariable):
+                continue
+            prop_el = ET.SubElement(event_el, 'e:property')
+            ET.SubElement(prop_el, state_var.name).text = str(state_var.value)
+        message = ET.tostring(event_el, encoding='utf-8', xml_declaration=True).decode()
+
+        headers = {
+            'CONTENT-TYPE': 'text/xml; charset="utf-8"',
+            'NT': 'upnp:event',
+            'NTS': 'upnp:propchange',
+        }
+
+        async def _deliver(sub: EventSubscriber) -> None:
+            hdr = headers.copy()
+            hdr['SID'] = sub.uuid
+            hdr['SEQ'] = str(sub.get_next_seq())
+            await self.requester.async_http_request(
+                HttpRequest('NOTIFY', sub.url, headers=hdr, body=message)
+            )
+
+        results = await asyncio.gather(
+            *(_deliver(sub) for sub in subscribers),
+            return_exceptions=True,
+        )
+        for sub, result in zip(subscribers, results):
+            if result is None:
+                continue
+            if isinstance(result, UpnpConnectionError):
+                logger.warning(
+                    'ContentDirectory: dropping subscription to unreachable callback '
+                    'callback=%s sid=%s err=%s',
+                    sub.url,
+                    sub.uuid,
+                    result,
+                )
+                self.del_subscriber(sub.uuid)
+            else:
+                logger.error(
+                    'ContentDirectory: failed to notify callback=%s sid=%s err=%s',
+                    sub.url,
+                    sub.uuid,
+                    result,
+                )
+
     STATE_VARIABLE_DEFINITIONS = {
         'A_ARG_TYPE_ObjectID': create_state_var('string'),
         'A_ARG_TYPE_Result': create_state_var('string'),
