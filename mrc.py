@@ -495,6 +495,7 @@ def main():
     logging.getLogger('torrent').setLevel(logging.WARN)
     logging.getLogger('aioupnp').setLevel(logging.INFO)
     logging.getLogger('aiohttp.access').setLevel(logging.WARN)
+    logging.getLogger('async_upnp_client.traffic.upnp').setLevel(logging.DEBUG)
 
     httpport = 8883
     # TODO: use argparse

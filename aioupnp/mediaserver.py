@@ -153,8 +153,17 @@ class ContentDirectoryService(UpnpServerService):
             cid = container.get('id')
             if cid is not None:
                 container_ids.append(str(cid))
-        self.state_variable('ContainerUpdateIDs').value = ','.join(
+        container_update_ids = ','.join(
             '{},{}'.format(cid, system_update_id) for cid in container_ids
+        )
+        self.state_variable('ContainerUpdateIDs').value = container_update_ids
+
+        logging.getLogger('aioupnp.mediaserver').info(
+            'ContentDirectory: content changed, SystemUpdateID=%s ContainerUpdateIDs=%s '
+            'subscribers=%d',
+            system_update_id,
+            container_update_ids,
+            len(self._subscribers),
         )
 
     def _children(self, object_id: str) -> List[didl_lite.DidlObject]:
