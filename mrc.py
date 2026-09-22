@@ -7,6 +7,7 @@
 from __future__ import annotations
 import asyncio
 import uvloop
+import functools
 import json
 import urllib.parse
 import os.path
@@ -19,11 +20,12 @@ import multiprocessing
 import traceback
 import aiohttp
 import aiohttp.web
-import aiohttp.client_exceptions
 import aioupnp
 import torrentstream
 import telnetlib3
-from typing import Optional
+from async_upnp_client.exceptions import UpnpError
+from async_upnp_client.profiles.dlna import DmrDevice
+from typing import Dict, Optional
 from io import StringIO
 import contextlib
 
@@ -38,12 +40,13 @@ except ModuleNotFoundError:
 
 
 class MediaDevice:
-    def __init__(self, device):
-        self.media = device
-        self.status = {'state': None, 'item': [], 'device': device.friendlyName}
+    def __init__(self, dmr: DmrDevice):
+        self.dmr = dmr
+        self.last_url: Optional[str] = None
+        self.status = {'state': None, 'item': [], 'device': dmr.name}
 
     def __repr__(self):
-        return "{} {}".format(self.media, self.status)
+        return "{} {}".format(self.dmr.name, self.status)
 
 
 class UPnPctrl:
@@ -55,85 +58,94 @@ class UPnPctrl:
         self.log = logging.getLogger(self.__class__.__name__)
 
         self.loop = loop or asyncio.get_event_loop()
-        self.aioupnp = aioupnp.UPNPServer(loop=self.loop, http=http, httpport=httpport)
-        aioupnp.connect('UPnP.Device.detection_completed', self._media_renderer_found)
-        aioupnp.connect('UPnP.RootDevice.removed', self._media_renderer_removed)
+        self.httpport = httpport
+        self.registry = aioupnp.RendererRegistry(
+            loop=self.loop,
+            on_device_found=self._media_renderer_found,
+            on_device_removed=self._media_renderer_removed,
+        )
 
-        self.mediadevices = {}
-        self.device:Optional[MediaDevice] = None
+        self.mediadevices: Dict[str, MediaDevice] = {}
+        self.device: Optional[MediaDevice] = None
         self.registered_callbacks = {}
 
-    async def _media_renderer_removed(self, device: aioupnp.UPNPDevice) -> None:
-        self.log.info('media renderer removed %s %s', device.usn, device.friendlyName)
-        self.mediadevices.pop(device.usn, None)
-        if self.device:
-            if self.device.media.usn == device.usn:
-                if self.mediadevices:
-                    self.device = list(self.mediadevices.values())[0]
-                else:
-                    self.device = None
-                self.trigger_callbacks()
+    async def start(self) -> None:
+        await self.registry.start()
 
-    async def _media_renderer_found(self, device: aioupnp.UPNPDevice) -> None:
-        self.log.info('found upnp device %s %s %s', device.usn, device.friendlyName, device.friendlyDeviceType)
+    async def shutdown(self) -> None:
+        await self.registry.stop()
 
-        if device.friendlyDeviceType != 'MediaRenderer':
-            return
+    async def _media_renderer_removed(self, dmr: DmrDevice) -> None:
+        self.log.info('media renderer removed %s %s', dmr.udn, dmr.name)
+        self.mediadevices.pop(dmr.udn, None)
+        if self.device and self.device.dmr.udn == dmr.udn:
+            self.device = next(iter(self.mediadevices.values()), None)
+            self.trigger_callbacks()
 
-        self.log.info('media renderer %s', device.friendlyName)
+    async def _media_renderer_found(self, dmr: DmrDevice) -> None:
+        self.log.info('found media renderer %s %s', dmr.udn, dmr.name)
 
-        mediadevice = MediaDevice(device)
-        self.mediadevices[device.usn] = mediadevice
-        #if not self.device:
+        mediadevice = MediaDevice(dmr)
+        self.mediadevices[dmr.udn] = mediadevice
         self.device = mediadevice
         self.trigger_callbacks()
 
-        service = device.service('AVTransport')
-        service.subscribe('CurrentTrackMetaData', self.state_variable_change)
-        service.subscribe('TransportState', self.state_variable_change)
+        dmr.on_event = functools.partial(self._on_dmr_event, mediadevice)
+
+    def _on_dmr_event(self, mediadevice: MediaDevice, service, state_variables) -> None:
+        dmr = mediadevice.dmr
+        state = dmr.transport_state
+        mediadevice.status['state'] = state.name if state else None
+        mediadevice.status['item'] = (
+            [{'url': mediadevice.last_url, 'title': dmr.media_title}] if dmr.media_title else []
+        )
+        self.log.info('%s now: %s %s', dmr.name, mediadevice.status['state'], dmr.media_title)
+        self.trigger_callbacks()
+
+    def _local_address_for(self, remote_host: str) -> str:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((remote_host, 1))
+            return probe.getsockname()[0]
 
     async def transporturi(self, url, title='Video', relative=False):
         if self.device:
+            dmr = self.device.dmr
             if relative:
-                self.log.debug('local: %s url: %s location: %s', self.device.media.localhost, url, self.device.media.location)
-                url = urllib.parse.urljoin(self.device.media.localhost, url)
+                remote_host = urllib.parse.urlparse(dmr.device.device_url).hostname
+                local_ip = self._local_address_for(remote_host)
+                self.log.debug('local: %s url: %s location: %s', local_ip, url, dmr.device.device_url)
+                url = urllib.parse.urljoin('http://{}:{}/'.format(local_ip, self.httpport), url)
+            self.device.last_url = url
             try:
-                async with aiohttp.ClientSession(timeout=aiohttp.client.ClientTimeout(connect=5)) as session:
-                    async with session.head(url) as response:
-                        ctype = response.headers.get('content-type', 'video/mp4')
-                        service = self.device.media.service('AVTransport')
-                        try:
-                            await service.stop()
-                        except aiohttp.client_exceptions.ClientError:
-                            pass
-                        await service.setavtransporturi(url, title, ctype)
-                        await service.play()
-            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                try:
+                    await dmr.async_stop()
+                except UpnpError:
+                    pass
+                await dmr.async_set_transport_uri(url, title)
+                await dmr.async_play()
+            except (UpnpError, OSError, asyncio.TimeoutError) as err:
                 self.log.warning('transporturi %s', err)
                 return
 
     async def play(self):
         if self.device:
             try:
-                service = self.device.media.service('AVTransport')
-                await service.play()
-            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                await self.device.dmr.async_play()
+            except UpnpError as err:
                 self.log.warning('play %s', err)
 
     async def pause(self):
         if self.device:
             try:
-                service = self.device.media.service('AVTransport')
-                await service.pause()
-            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                await self.device.dmr.async_pause()
+            except UpnpError as err:
                 self.log.warning('pause %s', err)
 
     async def stop(self):
         if self.device:
             try:
-                service = self.device.media.service('AVTransport')
-                await service.stop()
-            except (OSError, asyncio.TimeoutError, aiohttp.client_exceptions.ClientError) as err:
+                await self.device.dmr.async_stop()
+            except UpnpError as err:
                 self.log.warning('stop %s', err)
 
     def add_alert_handler(self, callback):
@@ -142,30 +154,6 @@ class UPnPctrl:
 
     def remove_alert_handler(self, callback):
         self.registered_callbacks.pop(hash(callback), None)
-
-    def state_variable_change(self, variable):
-        usn = variable.service.device.usn
-        if variable.name == 'CurrentTrackMetaData':
-            self.log.debug('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
-            if variable.value is not None and variable.value:
-                try:
-                    elt = aioupnp.didl.fromString(variable.value)
-                    self.mediadevices[usn].status['item'] = []
-                    url = elt.get('item/res') if elt.get('item/res') is not None else elt.find('item').attrib.get('id')
-                    self.log.info('now playing: %s %s', elt.get('item/dc:title'), url)
-                    self.mediadevices[usn].status['item'].append({
-                        'url':   url,
-                        'title': elt.get('item/dc:title')
-                    })
-                    #for item in elt.getItems():
-                    #    print("now playing:", item.title, item.id)
-                    #    self.mediadevices[usn].status['item'].append({'url':item.id, 'title':item.title})
-                except (TypeError, KeyError):
-                    return
-        elif variable.name == 'TransportState':
-            self.log.info('%s changed from %s to %s', variable.name, variable.old_value, variable.value)
-            self.mediadevices[usn].status['state'] = variable.value
-        self.trigger_callbacks()
 
     def trigger_callbacks(self):
         for callback in self.registered_callbacks.values():
@@ -181,7 +169,7 @@ class UPnPctrl:
                 self.log.error('trigger_callbacks exception %s', exeption)
 
     async def refresh(self):
-        await self.aioupnp.MSearch()
+        await self.registry.async_search()
 
 
 class CancellablePool:
@@ -479,7 +467,6 @@ def main():
     logging.basicConfig(level=logging.INFO, format=logformat)
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.get_event_loop()
-    aioupnp.loop(loop)
 
     def exception_handler(loop, context):
         logging.error('exception_handler: %s', context)
@@ -498,15 +485,50 @@ def main():
     # TODO: use argparse
     save_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/'
 
+    def lan_ip() -> str:
+        """best-guess LAN-facing IP, used to build absolute URLs for DLNA clients browsing the MediaServer"""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            try:
+                probe.connect(('8.8.8.8', 80))
+                return probe.getsockname()[0]
+            except OSError:
+                return socket.gethostbyname(socket.gethostname())
+
+    def content_containers():
+        return [{'id': data['info_hash'], 'title': data['title']} for data in torrent.list_files()]
+
+    def content_items(container_id):
+        base = 'http://{}:{}{}'.format(lan_ip(), httpport, torrent.options['urlpath'])
+        for data in torrent.list_files():
+            if data['info_hash'] != container_id:
+                continue
+            return [{
+                'id': file['id'],
+                'title': os.path.basename(file['path']),
+                'url': urllib.parse.urljoin(base, urllib.parse.quote(file['path'])),
+                'mime': mimetypes.guess_type(file['path'], strict=False)[0],
+            } for file in data['files']]
+        return []
+
     http = aiohttp.web.Application(middlewares=[rootindex])
     upnp = UPnPctrl(loop=loop, http=http, httpport=httpport)
     torrent = torrentstream.TorrentStream(loop=loop, save_path=save_path, urlpath='/bt/')
     ws = WebSocketFactory(loop=loop, upnp=upnp, torrent=torrent)
     http.on_shutdown.append(ws.onShutdown)
 
+    mediaserver = aioupnp.MediaServer(
+        list_containers=content_containers,
+        list_items=content_items,
+        friendly_name='loadsniffer',
+    )
+    torrent.add_alert_handler('files_list_update_alert', lambda alert: mediaserver.on_files_changed())
+
     http.add_subapp(torrent.options['urlpath'], torrent.http)
     http.router.add_get('/ws', ws.websocket_handler)
     http.router.add_static('/', 'static')
+
+    loop.run_until_complete(upnp.start())
+    loop.run_until_complete(mediaserver.start())
 
     logging.info('listening aiohttp server %s on port %d', aiohttp.__version__, httpport)
 
@@ -587,6 +609,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        loop.run_until_complete(mediaserver.stop())
+        loop.run_until_complete(upnp.shutdown())
         loop.run_until_complete(runner.cleanup())
         cons.close()
         tasks = asyncio.all_tasks(loop)

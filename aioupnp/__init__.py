@@ -1,5 +1,4 @@
-version = '1.0'
+version = '2.0'
 
-from .notify import *
-from .upnp import *
-from .dlna import *
+from .renderer import RendererRegistry
+from .mediaserver import MediaServer

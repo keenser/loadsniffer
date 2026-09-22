@@ -1,0 +1,22 @@
+services:
+  mrc:
+    build: .
+    image: loadsniffer/mrc
+    container_name: mrc
+    restart: unless-stopped
+
+    # UPnP/DLNA needs host networking here, not just port publishing:
+    #  - SSDP is multicast (239.255.255.250:1900), which a bridge network's
+    #    NAT doesn't forward;
+    #  - the MediaServer and its GENA event callbacks bind an *ephemeral*
+    #    port chosen at startup, which can't be pre-declared in `ports:`;
+    #  - the LAN IP the server advertises to renderers/clients (see
+    #    mrc.py's lan_ip()/local_address_for()) must be the host's real,
+    #    LAN-reachable address, not a container-internal bridge IP.
+    network_mode: host
+
+    volumes:
+      - /var/lib/mrc:/var/lib/mrc
+
+    environment:
+      - PYTHONUNBUFFERED=1

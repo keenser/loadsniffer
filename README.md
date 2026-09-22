@@ -4,11 +4,14 @@ Chrome extension grab media resources from open tabs using mrc.py daemon as back
 Communicates with media renderers on local network using upnp-av protocol.
 Find media resources from web pages using youtube-dl which can be played on media renderers.
 Uses torrentstream.py module to stream media over torrent network.
+Also advertises itself on the network as a UPnP/DLNA MediaServer, so any DLNA client (smart TV, BubbleUPnP, Kodi, ...) can browse the served torrent files directly, without going through the web interface.
 
 # How to run
 On server side(your home media server):
 
 $ sudo apt-get install python3-libtorrent python3-lxml python3-aiohttp python3-aiofiles youtube-dl
+
+$ pip3 install async-upnp-client didl-lite
 
 $ ./mrc.py
 

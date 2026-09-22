@@ -2,32 +2,37 @@
 #
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
 #
+"""Smoke test: advertise a MediaServer with a couple of fake files, browsable by any DLNA client."""
 
 import asyncio
 import logging
-import aiohttp.web
-from . import notify
-from . import upnp
+from . import MediaServer
+
+FAKE_CONTAINERS = [{'id': 'demo', 'title': 'Demo torrent'}]
+FAKE_ITEMS = {
+    'demo': [
+        {'id': '0', 'title': 'Big Buck Bunny.mp4', 'url': 'http://download.blender.org/peach/bigbuckbunny_movies/big_buck_bunny_480p_h264.mov', 'mime': 'video/mp4'},
+    ],
+}
 
 
 def main():
-    logging.basicConfig(level=logging.WARN)
+    logging.basicConfig(level=logging.INFO)
+    loop = asyncio.get_event_loop()
 
-    httpport = 8444
-    app = aiohttp.web.Application()
-    upnpserver = upnp.UPNPServer(http=app, httpport=httpport)
+    server = MediaServer(
+        list_containers=lambda: FAKE_CONTAINERS,
+        list_items=lambda container_id: FAKE_ITEMS.get(container_id, []),
+        friendly_name='loadsniffer (demo)',
+    )
 
-    #upnpserver.ssdp.register({
-    #    'usn':'uuid:8d43c269-a700-4541-81b9-1789c6149a1a::upnp:rootdevice',
-    #    'nt': 'upnp:rootdevice',
-    #    'location': 'http://192.168.1.145:5000/rootDesc.xml',
-    #    'server': 'OpenWRT/OpenWrt UPnP/1.1 MiniUPnPd/2.0',
-    #    'cache-control': 'max-age=60'
-    #    },
-    #    ('192.168.1.145', '5000'), manifestation='local'
-    #)
-
-    aiohttp.web.run_app(app, port=httpport, reuse_port=True)
+    loop.run_until_complete(server.start())
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.run_until_complete(server.stop())
 
 
 if __name__ == '__main__':

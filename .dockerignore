@@ -1,0 +1,8 @@
+.git
+.claude
+.venv
+__pycache__
+*.pyc
+.mypy_cache
+chrome
+manifest.json
