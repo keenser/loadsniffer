@@ -16,6 +16,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from didl_lite import didl_lite
 from async_upnp_client.const import DeviceInfo, ServiceInfo
 from async_upnp_client.server import (
+    EventSubscriber,
     UpnpServer,
     UpnpServerDevice,
     UpnpServerService,
@@ -46,6 +47,27 @@ class ContentDirectoryService(UpnpServerService):
         scpd_url='/ContentDirectory/scpd.xml',
         xml=ET.Element('service'),
     )
+
+    def add_subscriber(self, subscriber: EventSubscriber) -> None:
+        """Log and register a subscription from a DLNA client (e.g. a TV)."""
+        super().add_subscriber(subscriber)
+        logging.getLogger('aioupnp.mediaserver').info(
+            'ContentDirectory: DLNA client subscribed to events '
+            'callback=%s sid=%s timeout=%ss',
+            subscriber.url,
+            subscriber.uuid,
+            subscriber.timeout,
+        )
+
+    def del_subscriber(self, sid: str) -> bool:
+        """Log and remove a subscription."""
+        removed = super().del_subscriber(sid)
+        if removed:
+            logging.getLogger('aioupnp.mediaserver').info(
+                'ContentDirectory: DLNA client unsubscribed from events sid=%s',
+                sid,
+            )
+        return removed
     STATE_VARIABLE_DEFINITIONS = {
         'A_ARG_TYPE_ObjectID': create_state_var('string'),
         'A_ARG_TYPE_Result': create_state_var('string'),
