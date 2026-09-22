@@ -1,4 +1,11 @@
 version = '2.0'
 
-from .renderer import RendererRegistry
-from .mediaserver import MediaServer
+# Apply the SSDP header-parsing compatibility shim as early as possible so it
+# is in effect before any SsdpListener is constructed (mrc.py imports aioupnp
+# before creating RendererRegistry).
+from . import _ssdp_compat  # noqa: E402,F401
+
+_ssdp_compat.apply()
+
+from .renderer import RendererRegistry  # noqa: E402
+from .mediaserver import MediaServer  # noqa: E402
