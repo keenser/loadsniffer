@@ -12,7 +12,6 @@ from typing import Awaitable, Callable, Dict, Optional, Tuple
 from async_upnp_client.aiohttp import AiohttpNotifyServer, AiohttpRequester
 from async_upnp_client.client_factory import UpnpFactory
 from async_upnp_client.const import SsdpSource
-from async_upnp_client.event_handler import UpnpEventHandlerRegister
 from async_upnp_client.exceptions import UpnpError
 from async_upnp_client.profiles.dlna import DmrDevice
 from async_upnp_client.ssdp import SSDP_ST_ROOTDEVICE
@@ -47,7 +46,24 @@ class RendererRegistry:
 
         self._requester = AiohttpRequester()
         self._factory = UpnpFactory(self._requester)
-        self._event_handlers = UpnpEventHandlerRegister(self._requester, AiohttpNotifyServer)
+        # A single shared notify server/event handler for every discovered
+        # device, bound to the same interface as SSDP.
+        #
+        # Deliberately NOT using async_upnp_client.event_handler.
+        # UpnpEventHandlerRegister here: in async_upnp_client 0.48.2 it hands
+        # back a *different* UpnpEventHandler instance than the one
+        # AiohttpNotifyServer actually dispatches incoming NOTIFYs to
+        # (AiohttpNotifyServer.__init__ creates its own internal
+        # `self.event_handler`, while
+        # UpnpEventHandlerRegister._create_event_handler_for_device creates
+        # and returns yet another, separate UpnpEventHandler for the same
+        # notify server). Subscribing through the returned handler populates
+        # a SID->service map that the notify server's request handler never
+        # consults, so every NOTIFY silently and permanently piles up in the
+        # *other* handler's unmatched-SID backlog and on_event never fires -
+        # regardless of how correctly the device behaves. Using
+        # `self._notify_server.event_handler` directly avoids the split.
+        self._notify_server = AiohttpNotifyServer(requester=self._requester, source=source or ('0.0.0.0', 0))
         self._devices: Dict[str, DmrDevice] = {}
         self._pending: set = set()
         self._listener = SsdpListener(
@@ -59,6 +75,7 @@ class RendererRegistry:
         self._research_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
+        await self._notify_server.async_start_server()
         await self._listener.async_start()
         self._research_task = self.loop.create_task(self._research())
 
@@ -72,6 +89,7 @@ class RendererRegistry:
         for udn in list(self._devices):
             await self._remove_device(udn)
         await self._listener.async_stop()
+        await self._notify_server.async_stop_server()
 
     async def async_search(self) -> None:
         await self._listener.async_search()
@@ -121,8 +139,7 @@ class RendererRegistry:
                 return
 
             self.log.info('found media renderer %s (%s)', device.name, device.udn)
-            event_handler = await self._event_handlers.async_add_device(device)
-            dmr = DmrDevice(device, event_handler)
+            dmr = DmrDevice(device, self._notify_server.event_handler)
             try:
                 await dmr.async_subscribe_services(auto_resubscribe=True)
             except UpnpError as err:
@@ -144,6 +161,5 @@ class RendererRegistry:
             await dmr.async_unsubscribe_services()
         except UpnpError:
             pass
-        await self._event_handlers.async_remove_device(dmr.device)
         if self._on_device_removed:
             await self._on_device_removed(dmr)
