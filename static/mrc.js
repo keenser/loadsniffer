@@ -338,7 +338,12 @@ var UpdateUPNPStatus = function(data) {
     else {
         let video = document.getElementById("video")
         if(video !== undefined && video !== null) {
-            video.classList.add('active');
+            // Replace the whole class list so 'active' is the ONLY class.
+            // Using classList.add() here would leave the previous 'hided'
+            // class in place (it was set via className = 'hided' above),
+            // and since .hided is declared after .active in the stylesheet
+            // it wins, keeping the video invisible after switching to Local.
+            video.className = 'active';
         }
     }
 }
