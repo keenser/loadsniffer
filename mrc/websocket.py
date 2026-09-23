@@ -10,14 +10,54 @@ import json
 import os.path
 import urllib.parse
 import mimetypes
-from typing import Optional
+from typing import List, Optional
 
 import aiohttp
 import aiohttp.web
+from pydantic import BaseModel, ValidationError
 
 import torrentstream
 
 from .extract import Info
+
+
+class TransportUriRequest(BaseModel):
+    url: str
+    title: str = 'Video'
+    cookie: Optional[str] = None
+    relative: bool = False
+
+
+class SelectRendererRequest(BaseModel):
+    udn: Optional[str] = None
+
+
+class UrlRequest(BaseModel):
+    """Shared shape for search/add/rm/recheck - all send {"url": "..."}.
+
+    For rm/recheck this is actually an info_hash (existing wire format from
+    static/mrc.js and the chrome/ extension - kept as-is, not renamed).
+    """
+    url: str
+
+
+class LoadRequest(BaseModel):
+    hash: str
+
+
+class BtFileEntry(BaseModel):
+    path: str
+    id: int
+    progress: float
+    title: str
+    url: str
+
+
+class BtTorrentEntry(BaseModel):
+    info_hash: str
+    title: str
+    progress: float
+    files: List[BtFileEntry] = []
 
 
 class Hub:
@@ -82,19 +122,33 @@ class Connection:
         return files
         ret = []
         for i in files:
-            mime = mimetypes.guess_type(i['path'], strict=False)[0]
+            mime = mimetypes.guess_type(i.path, strict=False)[0]
             if mime and mime.startswith('video'):
                 ret.append(i)
         return ret
 
-    def btfileslist(self, infiles):
+    def btfileslist(self, infiles: List[torrentstream.TorrentEntry]) -> List[BtTorrentEntry]:
+        result = []
         for handle in infiles:
-            for i in self.videofiles(handle['files']):
-                i['title'] = os.path.basename(i['path'])
-                i['url'] = urllib.parse.urljoin(
-                                self.hub.torrent.options['urlpath'],
-                                urllib.parse.quote(i['path']))
-        return infiles
+            files = [
+                BtFileEntry(
+                    path=f.path,
+                    id=f.id,
+                    progress=f.progress,
+                    title=os.path.basename(f.path),
+                    url=urllib.parse.urljoin(
+                        self.hub.torrent.options['urlpath'],
+                        urllib.parse.quote(f.path)),
+                )
+                for f in self.videofiles(handle.files)
+            ]
+            result.append(BtTorrentEntry(
+                info_hash=handle.info_hash,
+                title=handle.title,
+                progress=handle.progress,
+                files=files,
+            ))
+        return result
 
     async def _btupdate(self, alert):
         await self.sendMessage(self.btfileslist(alert.files), {'action': 'btstatus'})
@@ -123,21 +177,34 @@ class Connection:
         if request is None:
             request = self._msg
         if request:
+            if isinstance(message, BaseModel):
+                message = message.model_dump(mode='json')
+            elif isinstance(message, list):
+                message = [m.model_dump(mode='json') if isinstance(m, BaseModel) else m for m in message]
             request['response'] = message
             await self.ws.send_json(request)
+
+    def _validate(self, model_cls, data: dict):
+        try:
+            return model_cls.model_validate(data)
+        except ValidationError as err:
+            self.log.warning('invalid %s payload: %s', model_cls.__name__, err)
+            return None
 
     async def onMessage(self, request: dict, action: str, data: dict) -> None:
         self.log.debug('onMessage action: %s', action)
         self._msg = request
         if action == 'transporturi':
-            url = data.get('url')
-            if url:
-                if data.get('cookie'):
-                    #TODO
-                    print("cookie", data.get('cookie'))
-                    url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(data.get('cookie')))
-                self.log.info('push to play relative %s, url: %s', data.get('relative'), url)
-                await self.hub.upnp.transporturi(url, data.get('title', 'Video'), data.get('relative', False))
+            req = self._validate(TransportUriRequest, data)
+            if req is None:
+                return
+            url = req.url
+            if req.cookie:
+                #TODO
+                print("cookie", req.cookie)
+                url = "http://{}:8080/?url={}&cookie={}".format(self.local, urllib.parse.quote(url), urllib.parse.quote(req.cookie))
+            self.log.info('push to play relative %s, url: %s', req.relative, url)
+            await self.hub.upnp.transporturi(url, req.title, req.relative)
         elif action == 'play':
             await self.hub.upnp.play()
         elif action == 'pause':
@@ -147,14 +214,22 @@ class Connection:
         elif action == 'refresh':
             await self.hub.upnp.refresh()
         elif action == 'selectrenderer':
-            self.hub.upnp.select_device(data.get('udn'))
+            req = self._validate(SelectRendererRequest, data)
+            if req is None:
+                return
+            self.hub.upnp.select_device(req.udn)
         elif action == 'search':
-            url = data.get('url')
-            self.log.info('search %s', url)
-            ret = await self.hub.info.youtube_dl(url)
+            req = self._validate(UrlRequest, data)
+            if req is None:
+                return
+            self.log.info('search %s', req.url)
+            ret = await self.hub.info.youtube_dl(req.url)
             await self.sendMessage(ret)
         elif action == 'add':
-            url = data.get('url')
+            req = self._validate(UrlRequest, data)
+            if req is None:
+                return
+            url = req.url
             self.log.info('add %s', url)
 
             async def bittorrent():
@@ -176,15 +251,21 @@ class Connection:
             else:
                 await bittorrent()
         elif action == 'rm':
-            url = data.get('url')
-            self.hub.torrent.remove_torrent(url)
+            req = self._validate(UrlRequest, data)
+            if req is None:
+                return
+            self.hub.torrent.remove_torrent(req.url)
         elif action == 'load':
-            info_hash = data.get('hash')
-            self.hub.torrent.load_torrent(info_hash)
+            req = self._validate(LoadRequest, data)
+            if req is None:
+                return
+            self.hub.torrent.load_torrent(req.hash)
         elif action == 'btstatus':
             await self.sendMessage(self.btfileslist(self.hub.torrent.list_files()))
         elif action == 'upnpstatus':
             await self.sendMessage(self.hub.upnp.status)
         elif action == 'recheck':
-            info_hash = data.get('url')
-            self.hub.torrent.recheck(info_hash)
+            req = self._validate(UrlRequest, data)
+            if req is None:
+                return
+            self.hub.torrent.recheck(req.url)

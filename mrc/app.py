@@ -17,6 +17,7 @@ import urllib.parse
 import aiohttp
 import aiohttp.web
 import aioupnp
+from aioupnp.mediaserver import Container, Item
 import torrentstream
 
 from .devices import UPnPctrl
@@ -76,19 +77,19 @@ def main():
     host_ip = lan_ip()
 
     def content_containers():
-        return [{'id': data['info_hash'], 'title': data['title']} for data in torrent.list_files()]
+        return [Container(id=entry.info_hash, title=entry.title) for entry in torrent.list_files()]
 
     def content_items(container_id):
         base = 'http://{}:{}{}'.format(host_ip, httpport, torrent.options['urlpath'])
-        for data in torrent.list_files():
-            if data['info_hash'] != container_id:
+        for entry in torrent.list_files():
+            if entry.info_hash != container_id:
                 continue
-            return [{
-                'id': file['id'],
-                'title': os.path.basename(file['path']),
-                'url': urllib.parse.urljoin(base, urllib.parse.quote(file['path'])),
-                'mime': mimetypes.guess_type(file['path'], strict=False)[0],
-            } for file in data['files']]
+            return [Item(
+                id=file.id,
+                title=os.path.basename(file.path),
+                url=urllib.parse.urljoin(base, urllib.parse.quote(file.path)),
+                mime=mimetypes.guess_type(file.path, strict=False)[0],
+            ) for file in entry.files]
         return []
 
     http = aiohttp.web.Application(middlewares=[rootindex])

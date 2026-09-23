@@ -17,7 +17,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         async-upnp-client \
         python-didl-lite \
         uvloop \
-        telnetlib3
+        telnetlib3 \
+        pydantic
 
 WORKDIR /app
 COPY . /app

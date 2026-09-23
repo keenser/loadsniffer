@@ -7,12 +7,18 @@
 import contextlib
 import sys
 from io import StringIO
+from typing import Optional, Union
 
 import telnetlib3
+from telnetlib3.stream_reader import TelnetReader, TelnetReaderUnicode
+from telnetlib3.stream_writer import TelnetWriter, TelnetWriterUnicode
+
+TelnetReaderType = Union[TelnetReader, TelnetReaderUnicode]
+TelnetWriterType = Union[TelnetWriter, TelnetWriterUnicode]
 
 
 @contextlib.contextmanager
-def stdoutIO(stdout=None):
+def stdoutIO(stdout: Optional[StringIO] = None):
     old = sys.stdout
     if stdout is None:
         stdout = StringIO()
@@ -24,7 +30,7 @@ def stdoutIO(stdout=None):
 async def start(port: int, namespace: dict):
     """Start the telnet debug shell on `port`, exec()'ing commands against `namespace`."""
 
-    async def shell(reader, writer):
+    async def shell(reader: TelnetReaderType, writer: TelnetWriterType) -> None:
         """
         A default telnet shell, appropriate for use with telnetlib3.create_server.
 

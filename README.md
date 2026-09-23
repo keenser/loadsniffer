@@ -11,7 +11,7 @@ On server side(your home media server):
 
 $ sudo apt-get install python3-libtorrent python3-lxml python3-aiohttp python3-aiofiles youtube-dl
 
-$ pip3 install async-upnp-client python-didl-lite
+$ pip3 install async-upnp-client python-didl-lite pydantic
 
 $ ./mrc.py
 

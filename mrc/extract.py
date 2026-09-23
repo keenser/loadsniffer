@@ -7,6 +7,7 @@
 import asyncio
 import logging
 import multiprocessing
+from typing import Any, Callable, Optional
 
 have_youtube_dl = False
 try:
@@ -19,7 +20,7 @@ except ModuleNotFoundError:
 
 
 class CancellablePool:
-    def __init__(self, max_workers=3):
+    def __init__(self, max_workers: int = 3):
         self._free = {self._new_pool() for _ in range(max_workers)}
         self._working = set()
         self._change = asyncio.Event()
@@ -27,7 +28,7 @@ class CancellablePool:
     def _new_pool(self):
         return multiprocessing.Pool(1)
 
-    async def apply(self, fn, *args):
+    async def apply(self, fn: Callable[..., Any], *args: Any):
         """
         Like multiprocessing.Pool.apply_async, but:
          * is an asyncio coroutine
@@ -41,9 +42,9 @@ class CancellablePool:
 
         loop = asyncio.get_event_loop()
         fut = loop.create_future()
-        def _on_done(obj):
+        def _on_done(obj: Any) -> None:
             loop.call_soon_threadsafe(fut.set_result, obj)
-        def _on_err(err):
+        def _on_err(err: BaseException) -> None:
             loop.call_soon_threadsafe(fut.set_exception, err)
         pool.apply_async(fn, args, callback=_on_done, error_callback=_on_err)
 
@@ -64,12 +65,12 @@ class CancellablePool:
 
 
 class Info:
-    def __init__(self, loop):
+    def __init__(self, loop: asyncio.AbstractEventLoop):
         self.log = logging.getLogger(self.__class__.__name__)
         self.loop = loop
 
     @staticmethod
-    def extract_info(url=None):
+    def extract_info(url: Optional[str] = None):
         try:
             ydl = youtube_dl.YoutubeDL(
                 params={
@@ -93,7 +94,7 @@ class Info:
         except Exception:
             pass
 
-    async def youtube_dl(self, url):
+    async def youtube_dl(self, url: str):
         if not have_youtube_dl:
             return None
         pool = CancellablePool()

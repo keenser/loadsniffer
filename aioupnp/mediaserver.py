@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
 from didl_lite import didl_lite
+from pydantic import BaseModel
 from async_upnp_client.const import DeviceInfo, HttpRequest, ServiceInfo
 from async_upnp_client.exceptions import UpnpConnectionError
 from async_upnp_client.server import (
@@ -34,6 +35,18 @@ _ITEM_CLASS_BY_MAJOR_MIME = {
     'audio': didl_lite.AudioItem,
     'image': didl_lite.ImageItem,
 }
+
+
+class Container(BaseModel):
+    id: str
+    title: str
+
+
+class Item(BaseModel):
+    id: int
+    title: str
+    url: str
+    mime: Optional[str] = None
 
 
 def _free_tcp_port() -> int:
@@ -158,8 +171,8 @@ class ContentDirectoryService(UpnpServerService):
     }
 
     # Bound to real callables by MediaServer, per instance of the server.
-    _list_containers: Callable[[], List[Dict]] = staticmethod(lambda: [])
-    _list_items: Callable[[str], List[Dict]] = staticmethod(lambda container_id: [])
+    _list_containers: Callable[[], List[Container]] = staticmethod(lambda: [])
+    _list_items: Callable[[str], List[Item]] = staticmethod(lambda container_id: [])
 
     @callable_action(
         'Browse',
@@ -243,7 +256,7 @@ class ContentDirectoryService(UpnpServerService):
     def _children(self, object_id: str) -> List[didl_lite.DidlObject]:
         if object_id == '0':
             return [
-                didl_lite.Container(id=container['id'], parent_id='0', title=container['title'], restricted='1')
+                didl_lite.Container(id=container.id, parent_id='0', title=container.title, restricted='1')
                 for container in self._list_containers()
             ]
         return [self._to_didl_item(object_id, item) for item in self._list_items(object_id)]
@@ -253,12 +266,12 @@ class ContentDirectoryService(UpnpServerService):
             return didl_lite.Container(id='0', parent_id='-1', title='loadsniffer', restricted='1')
 
         for container in self._list_containers():
-            if container['id'] == object_id:
-                return didl_lite.Container(id=container['id'], parent_id='0', title=container['title'], restricted='1')
+            if container.id == object_id:
+                return didl_lite.Container(id=container.id, parent_id='0', title=container.title, restricted='1')
 
         container_id, _, _ = object_id.partition('/')
         for item in self._list_items(container_id):
-            if '{}/{}'.format(container_id, item['id']) == object_id:
+            if '{}/{}'.format(container_id, item.id) == object_id:
                 return self._to_didl_item(container_id, item)
         return None
 
@@ -269,17 +282,17 @@ class ContentDirectoryService(UpnpServerService):
     _DLNA_FEATURES = 'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000'
 
     @staticmethod
-    def _to_didl_item(container_id: str, item: Dict) -> didl_lite.Item:
-        mime = item.get('mime') or 'application/octet-stream'
+    def _to_didl_item(container_id: str, item: Item) -> didl_lite.Item:
+        mime = item.mime or 'application/octet-stream'
         item_cls = _ITEM_CLASS_BY_MAJOR_MIME.get(mime.split('/')[0], didl_lite.Item)
         protocol_info = 'http-get:*:{}:*'.format(mime)
         if mime.startswith('video/'):
             protocol_info = 'http-get:*:{}:{}'.format(mime, ContentDirectoryService._DLNA_FEATURES)
-        resource = didl_lite.Resource(uri=item['url'], protocol_info=protocol_info)
+        resource = didl_lite.Resource(uri=item.url, protocol_info=protocol_info)
         return item_cls(
-            id='{}/{}'.format(container_id, item['id']),
+            id='{}/{}'.format(container_id, item.id),
             parent_id=container_id,
-            title=item['title'],
+            title=item.title,
             restricted='1',
             res=[resource],
         )
@@ -354,8 +367,8 @@ class MediaServer:
     """Advertises a UPnP MediaServer with a ContentDirectory backed by the given callables."""
 
     def __init__(self,
-                 list_containers: Callable[[], List[Dict]],
-                 list_items: Callable[[str], List[Dict]],
+                 list_containers: Callable[[], List[Container]],
+                 list_items: Callable[[str], List[Item]],
                  friendly_name: str = 'loadsniffer',
                  http_port: Optional[int] = None,
                  source: Optional[Tuple[str, int]] = None

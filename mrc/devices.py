@@ -10,18 +10,49 @@ import functools
 import logging
 import socket
 import urllib.parse
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Dict, List, Optional, Sequence
+
+import aiohttp.web
+from pydantic import BaseModel
 
 import aioupnp
+from async_upnp_client.client import UpnpService, UpnpStateVariable
 from async_upnp_client.exceptions import UpnpError
 from async_upnp_client.profiles.dlna import DmrDevice
+
+
+class RendererInfo(BaseModel):
+    udn: str
+    name: str
+
+
+class PlaybackItem(BaseModel):
+    url: Optional[str] = None
+    title: Optional[str] = None
+
+
+class RendererStatus(BaseModel):
+    state: Optional[str] = None
+    item: List[PlaybackItem] = []
+    device: Optional[str] = None
+    udn: str
+    devices: List[RendererInfo] = []
+
+
+@dataclass
+class Subscription:
+    """One add_alert_handler() registration: the callback plus the last status
+    it was sent, so trigger_callbacks() can skip re-sending an unchanged one."""
+    callback: Callable[[RendererStatus], Awaitable[None]]
+    status: Optional[RendererStatus] = None
 
 
 class MediaDevice:
     def __init__(self, dmr: DmrDevice):
         self.dmr = dmr
         self.last_url: Optional[str] = None
-        self.status = {'state': None, 'item': [], 'device': dmr.name, 'udn': dmr.udn}
+        self.status = RendererStatus(device=dmr.name, udn=dmr.udn)
 
     def __repr__(self):
         return "{} {}".format(self.dmr.name, self.status)
@@ -35,7 +66,7 @@ class UPnPctrl:
 
     def __init__(self,
                  loop: Optional[asyncio.AbstractEventLoop] = None,
-                 http=None,
+                 http: Optional[aiohttp.web.Application] = None,
                  httpport: int = 0,
                  source: Optional[tuple] = None
                  ) -> None:
@@ -58,7 +89,7 @@ class UPnPctrl:
         # good on any explicit choice, including local, so a later renderer
         # never silently overrides it.
         self._auto_select = True
-        self.registered_callbacks = {}
+        self.registered_callbacks: Dict[int, Subscription] = {}
 
     async def start(self) -> None:
         await self.registry.start()
@@ -88,14 +119,14 @@ class UPnPctrl:
 
         dmr.on_event = functools.partial(self._on_dmr_event, mediadevice)
 
-    def _on_dmr_event(self, mediadevice: MediaDevice, service, state_variables) -> None:
+    def _on_dmr_event(self, mediadevice: MediaDevice, service: UpnpService, state_variables: Sequence[UpnpStateVariable]) -> None:
         dmr = mediadevice.dmr
         state = dmr.transport_state
-        mediadevice.status['state'] = state.name if state else None
-        mediadevice.status['item'] = (
-            [{'url': mediadevice.last_url, 'title': dmr.media_title}] if dmr.media_title else []
+        mediadevice.status.state = state.name if state else None
+        mediadevice.status.item = (
+            [PlaybackItem(url=mediadevice.last_url, title=dmr.media_title)] if dmr.media_title else []
         )
-        self.log.info('%s now: %s %s', dmr.name, mediadevice.status['state'], dmr.media_title)
+        self.log.info('%s now: %s %s', dmr.name, mediadevice.status.state, dmr.media_title)
         self.trigger_callbacks()
 
     def _local_address_for(self, remote_host: str) -> str:
@@ -157,28 +188,28 @@ class UPnPctrl:
                 self.log.warning('stop %s', err)
 
     def add_alert_handler(self, callback):
-        self.registered_callbacks[hash(callback)] = {'status': None, 'callback': callback}
+        self.registered_callbacks[hash(callback)] = Subscription(callback=callback)
         self.trigger_callbacks()
 
     def remove_alert_handler(self, callback):
         self.registered_callbacks.pop(hash(callback), None)
 
     @property
-    def status(self) -> dict:
+    def status(self) -> RendererStatus:
         """Active target's status, plus the picker's list: Local + every known renderer.
 
         Never None - "no renderer selected" is local browser playback, itself
         a selectable entry (LOCAL_UDN), not the absence of a status.
         """
-        devices = [{'udn': self.LOCAL_UDN, 'name': 'Local'}]
+        devices = [RendererInfo(udn=self.LOCAL_UDN, name='Local')]
         devices += [
-            {'udn': udn, 'name': mediadevice.dmr.name} for udn, mediadevice in self.mediadevices.items()
+            RendererInfo(udn=udn, name=mediadevice.dmr.name) for udn, mediadevice in self.mediadevices.items()
         ]
         if self.device is None:
-            status = {'state': None, 'item': [], 'device': None, 'udn': self.LOCAL_UDN}
+            status = RendererStatus(udn=self.LOCAL_UDN)
         else:
-            status = dict(self.device.status)
-        status['devices'] = devices
+            status = self.device.status.model_copy()
+        status.devices = devices
         return status
 
     def select_device(self, udn: Optional[str]) -> None:
@@ -197,12 +228,12 @@ class UPnPctrl:
             self.trigger_callbacks()
 
     def trigger_callbacks(self):
-        for callback in self.registered_callbacks.values():
+        for subscription in self.registered_callbacks.values():
             try:
                 status = self.status
-                if callback['status'] != status:
-                    self.loop.create_task(callback['callback'](status))
-                    callback['status'] = status.copy()
+                if subscription.status != status:
+                    self.loop.create_task(subscription.callback(status))
+                    subscription.status = status.model_copy()
             except Exception as exeption:
                 self.log.error('trigger_callbacks exception %s', exeption)
 

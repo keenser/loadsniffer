@@ -12,9 +12,10 @@ import os
 import asyncio
 import logging
 import binascii
-from typing import Dict, NamedTuple, Optional, cast
+from typing import Dict, List, NamedTuple, Optional, cast
 import aiofiles
 from aiohttp import web, http_writer
+from pydantic import BaseModel
 import libtorrent
 import socket
 import json
@@ -194,12 +195,44 @@ class TorrentProducer(StaticTorrentProducer):
     pass
 
 
+class TorrentFileEntry(BaseModel):
+    path: str
+    id: int
+    progress: float
+
+
+class TorrentEntry(BaseModel):
+    info_hash: str
+    title: str
+    progress: float
+    files: List[TorrentFileEntry] = []
+
+
+class TorrentStatus(BaseModel):
+    name: Optional[str] = None
+    pieces: Optional[str] = None
+    paused: bool
+    # str(), not the live libtorrent enum/error_code - those aren't JSON-serializable.
+    state: str
+    error: str
+    progress: str
+    download_rate: int
+    upload_rate: int
+    num_seeds: int
+    num_peers: int
+
+
+class SessionStatus(BaseModel):
+    version: str
+    torrents: Dict[str, TorrentStatus] = {}
+
+
 class FilesListUpdateAlert:
     """custom libtorrent alert called from TorrentStream"""
     _what = 'files_list_update_alert'
     _message = '{} files updated'
 
-    def __init__(self, files):
+    def __init__(self, files: List[TorrentEntry]):
         self.files = files
 
     def what(self):
@@ -480,36 +513,37 @@ class TorrentStream:
         except TypeError:
             return {'error': 'incorrect hash'}
 
-    def list_files(self):
+    def list_files(self) -> List[TorrentEntry]:
         """list available files in torrents"""
         directory = []
         files_list:Dict[str, FileInfo] = {}
         for handle in self.session.get_torrents():
             if handle.is_valid():
-                data = {
-                    'info_hash': str(handle.info_hash()),
-                    'files': [],
-                    'progress': handle.status().progress * 100.0,
-                }
+                files = []
                 ti = handle.get_torrent_info()
                 if ti:
                     # fix SIGSEGV
                     progress = handle.file_progress() if handle.status().progress else None
-                    data['title'] = ti.name()
+                    title = ti.name()
                     for num in range(ti.num_files()):
                         file = ti.file_at(num)
-                        data['files'].append({
-                            'path':file.path,
-                            'id': num,
-                            'progress': progress[num]/file.size * 100.0 if progress else 0
-                        })
+                        files.append(TorrentFileEntry(
+                            path=file.path,
+                            id=num,
+                            progress=progress[num]/file.size * 100.0 if progress else 0,
+                        ))
                         files_list[file.path] = FileInfo(id=num, handle=handle, info=file)
-                    data['files'].sort(key=lambda data: data['path'])
+                    files.sort(key=lambda entry: entry.path)
                 else:
-                    data['title'] = str(handle.info_hash())
-                directory.append(data)
+                    title = str(handle.info_hash())
+                directory.append(TorrentEntry(
+                    info_hash=str(handle.info_hash()),
+                    title=title,
+                    progress=handle.status().progress * 100.0,
+                    files=files,
+                ))
         self._files_list = files_list
-        return sorted(directory, key=lambda data: data['title'])
+        return sorted(directory, key=lambda entry: entry.title)
 
     def recheck(self, info_hash):
         """recheck torrent"""
@@ -522,17 +556,17 @@ class TorrentStream:
             return {'error': '{} incorrect hash'.format(info_hash)}
         return {'error': '{} not found'.format(info_hash)}
 
-    def status(self):
+    def status(self) -> SessionStatus:
         """dump torrent status"""
         def space_break(string, length):
             string = [str(i) for i in string]
             return ' '.join(''.join(string[i:i+length]) for i in range(0, len(string), length))
-        status = {}
-        status['version'] = libtorrent.version
+        torrents: Dict[str, TorrentStatus] = {}
 
         for handle in self.session.get_torrents():
             info_hash = str(handle.info_hash())
-            s = {}
+            name = None
+            pieces = None
             if handle.has_metadata():
                 torrent_info = handle.get_torrent_info()
                 piece_map = handle.get_piece_priorities()
@@ -540,23 +574,22 @@ class TorrentStream:
                     if handle.have_piece(piece_index):
                         piece_map[piece_index] = '*'
 
-                s['pieces'] = space_break(piece_map, 100)
-                #file_map = ''
-                #for file_index in range(torrent_info.num_files()):
-                #    file_map += str(handle.file_priority(file_index))
-                #s['files'] = file_map
-                s['name'] = torrent_info.name()
+                pieces = space_break(piece_map, 100)
+                name = torrent_info.name()
             st = handle.status()
-            s['paused'] = st.paused
-            s['state'] = st.state
-            s['error'] = st.error
-            s['progress'] = '{:.2%}'.format(st.progress)
-            s['download_rate'] = st.download_rate
-            s['upload_rate'] = st.upload_rate
-            s['num_seeds'] = st.num_seeds
-            s['num_peers'] = st.num_peers
-            status[info_hash] = s
-        return status
+            torrents[info_hash] = TorrentStatus(
+                name=name,
+                pieces=pieces,
+                paused=st.paused,
+                state=str(st.state),
+                error=str(st.error),
+                progress='{:.2%}'.format(st.progress),
+                download_rate=st.download_rate,
+                upload_rate=st.upload_rate,
+                num_seeds=st.num_seeds,
+                num_peers=st.num_peers,
+            )
+        return SessionStatus(version=libtorrent.version, torrents=torrents)
 
     async def shutdown(self, app):
         self.log.info("shutdown done")
@@ -583,9 +616,9 @@ class TorrentStream:
             self.add_torrent(url)
             ret = {'status': '{} added'.format(url)}
         elif action == 'info':
-            ret = self.status()
+            ret = self.status().model_dump(mode='json')
         elif action == 'ls':
-            ret = self.list_files()
+            ret = [entry.model_dump(mode='json') for entry in self.list_files()]
         elif action == 'rm' and url:
             ret = self.remove_torrent(url)
         elif action == 'pause' and url:
