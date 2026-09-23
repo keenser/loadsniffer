@@ -255,7 +255,29 @@ var UpdateUPNPStatus = function(data) {
 
     container.appendChild(refresh);
 
-    if (data) {
+    if (data && data.devices && data.devices.length > 1) {
+        let picker = document.createElement("select");
+        for (let i = 0; i < data.devices.length; i++) {
+            let opt = document.createElement("option");
+            opt.value = data.devices[i].udn;
+            opt.textContent = data.devices[i].name;
+            opt.selected = data.devices[i].udn === data.udn;
+            picker.appendChild(opt);
+        }
+        picker.addEventListener('change', function(e) {
+            if (sendMessage !== undefined) {
+                sendMessage({
+                    action: "selectrenderer",
+                    request: {
+                        udn: picker.value
+                    }
+                });
+            }
+        });
+        container.appendChild(picker);
+    }
+
+    if (data && data.udn) {
         let text = '';
         let stat = document.createElement("span");
         text = data.device;

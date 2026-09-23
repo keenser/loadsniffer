@@ -348,7 +348,7 @@ class TorrentStream:
         self.add_alert_handler('file_completed', file_completed_alert)
         self.add_alert_handler('cache_flushed', cache_flushed_alert)
         self.add_alert_handler('save_resume_data', save_resume_data_alert)
-        self.add_alert_handler('tracker_announce', tracker_announce_alert)
+        # self.add_alert_handler('tracker_announce', tracker_announce_alert)
         self.add_alert_handler('piece_finished', piece_finished_alert)
 
         self.rfile, self.wfile = socket.socketpair()
