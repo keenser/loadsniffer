@@ -32,10 +32,9 @@ class Piece(NamedTuple):
 
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
-    def __init__(self, stream:TorrentStream, response:web.StreamResponse, fileinfo:FileInfo, offset=0, size:Optional[int]=None):
+    def __init__(self, stream:TorrentStream, fileinfo:FileInfo, offset=0, size:Optional[int]=None):
         self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
         self.stream = stream
-        self.response = response
         self.fileinfo = fileinfo
         self.offset = offset
         self.size = size or fileinfo.info.size - offset
@@ -43,72 +42,80 @@ class DynamicTorrentProducer:
         self.priority_window:int
         self.piece:Piece
         self.buffer = {}
+        self._piece_ready = asyncio.Event()
         self.log.info("starting %s offset: %d size: %d", self.fileinfo.info.path, self.offset, self.size)
 
     def _read_piece_alert(self, alert):
         self.log.debug("read_piece_alert %d %d", alert.piece, alert.size)
         self.buffer[alert.piece] = alert.buffer
-        self.response.resume()
+        self._piece_ready.set()
 
     def _piece_finished_alert(self, alert):
         self._slide()
-        self.response.resume()
+        self._piece_ready.set()
 
-    async def _read_piece(self):
-        self.log.debug("read_piece %d %d %d", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset)
-        buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset]
-        await self.response.write(buffer)
-        await self.response.drain()
+    async def _piece_available(self) -> bool:
+        """prefetch pieces in the priority window, report if the current one is ready"""
+        for window in range(self.piece.piece, min(self.lastpiece.piece + 1, self.piece.piece + len(self.prioritymask))):
+            if not window in self.buffer and self.fileinfo.handle.have_piece(window):
+                self.buffer[window] = None
+                self.fileinfo.handle.read_piece(window)
+        return bool(self.buffer.get(self.piece.piece))
+
+    async def _read_piece(self) -> bytes:
+        self.log.debug("read_piece %d %d %d", self.piece.piece, self.piece.start, self.piece.start + self.lastoffset - self.offset + 1)
+        buffer = self.buffer[self.piece.piece][self.piece.start:self.piece.start + self.lastoffset - self.offset + 1]
         self.offset += len(buffer)
         del self.buffer[self.piece.piece]
 
         if self.offset < self.lastoffset:
             # move to next piece
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-        else:
-            raise asyncio.CancelledError
 
-    async def resumeProducing(self):
-        """continue torrent download iteration"""
-        self.log.debug("index %d %s", self.piece.piece, self.buffer.keys())
-        for window in range(self.piece.piece, min(self.lastpiece.piece + 1, self.piece.piece + len(self.prioritymask))):
-            if not window in self.buffer and self.fileinfo.handle.have_piece(window):
-                self.buffer[window] = None
-                self.fileinfo.handle.read_piece(window)
-        if self.piece.piece in self.buffer and self.buffer[self.piece.piece]:
-            await self._read_piece()
+        return bytes(buffer)
 
-    async def stopProducing(self):
-        """stop torrent download"""
-        self.log.info("stopProducing %s size: %d", self.fileinfo.info.path, self.size)
-        self.stream.remove_alert_handler('read_piece', self._read_piece_alert, self.fileinfo.handle)
-        self.stream.remove_alert_handler('piece_finished', self._piece_finished_alert, self.fileinfo.handle)
+    async def _cleanup(self):
+        """hook for subclasses needing extra teardown"""
 
-    async def start(self):
-        """start downloading torrent file"""
+    async def __aiter__(self) -> AsyncGenerator[bytes, None]:
+        """start downloading torrent file and stream it"""
         self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
         self.lastpiece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.lastoffset, 0)
         self.piecelength = self.fileinfo.handle.get_torrent_info().piece_length()
         self.log.debug("start %d %d %d %d", self.size, self.piece.piece, self.lastpiece.piece, self.piecelength)
 
         if self.piece.piece > self.lastpiece.piece:
-            raise asyncio.CancelledError
+            return
 
         self.stream.add_alert_handler('read_piece', self._read_piece_alert, self.fileinfo.handle)
         self.stream.add_alert_handler('piece_finished', self._piece_finished_alert, self.fileinfo.handle)
 
-        # priority window size 4Mb * 8
-        priorityblock = int((4 * 1024 * 1024) / self.piecelength)
-        # piece_length more than 4Mb ?
-        if priorityblock < 1:
-            priorityblock = 1
-        elif priorityblock > 8:
-            priorityblock = 8
-        self.prioritymask = [i for i in [TorrentStream.HIGHEST, TorrentStream.HIGHEST, 6, 5, 4, 3, 2, 1] for _ in range(priorityblock)]
-        self.log.debug("prioritymask %s", self.prioritymask)
+        try:
+            # priority window size 4Mb * 8
+            priorityblock = int((4 * 1024 * 1024) / self.piecelength)
+            # piece_length more than 4Mb ?
+            if priorityblock < 1:
+                priorityblock = 1
+            elif priorityblock > 8:
+                priorityblock = 8
+            self.prioritymask = [i for i in [TorrentStream.HIGHEST, TorrentStream.HIGHEST, 6, 5, 4, 3, 2, 1] for _ in range(priorityblock)]
+            self.log.debug("prioritymask %s", self.prioritymask)
 
-        self.fileinfo.handle.resume()
-        self._slide(self.piece.piece)
+            self.fileinfo.handle.resume()
+            self._slide(self.piece.piece)
+
+            while self.offset <= self.lastoffset:
+                while not await self._piece_available():
+                    self._piece_ready.clear()
+                    await self._piece_ready.wait()
+
+                chunk = await self._read_piece()
+                if chunk:
+                    yield chunk
+        finally:
+            await self._cleanup()
+            self.stream.remove_alert_handler('read_piece', self._read_piece_alert, self.fileinfo.handle)
+            self.stream.remove_alert_handler('piece_finished', self._piece_finished_alert, self.fileinfo.handle)
 
     def _slide(self, offset:Optional[int]=None):
         if offset is not None:
@@ -135,28 +142,18 @@ class DynamicTorrentProducer:
 
 class StaticTorrentProducer(DynamicTorrentProducer):
     """speedup reading pieces using direct access to file on filesystem"""
-    async def _read_piece_1(self):
-        """open file every iteration"""
-        async with aiofiles.open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), mode='rb') as fileObject:
-            await fileObject.seek(self.offset)
-            data = await fileObject.read(self.piecelength - self.piece.start)
+    def __init__(self, stream:TorrentStream, fileinfo:FileInfo, offset=0, size:Optional[int]=None):
+        super().__init__(stream=stream, fileinfo=fileinfo, offset=offset, size=size)
+        self.fileObject = None
 
-            if data:
-                self.offset += len(data)
-                await self.response.write(data)
-                await self.response.drain()
-            del data
+    async def _piece_available(self) -> bool:
+        return self.fileinfo.handle.have_piece(self.piece.piece)
 
-            if self.offset < self.lastoffset:
-                self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-            else:
-                raise asyncio.CancelledError
-
-    async def _read_piece(self):
+    async def _read_piece(self) -> bytes:
         """open file ones"""
         # probably file exsists on filesystem because have_piece()==True success check
         # now we can open it
-        if not hasattr(self, 'fileObject') or self.fileObject.closed:
+        if self.fileObject is None or self.fileObject.closed:
             self.fileObject = await aiofiles.open(os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path), mode='rb')
             await self.fileObject.seek(self.offset)
 
@@ -168,26 +165,17 @@ class StaticTorrentProducer(DynamicTorrentProducer):
 
         if data:
             self.offset += len(data)
-            await self.response.write(data)
-            await self.response.drain()
 
         if self.offset < self.lastoffset:
             # move to next piece
             self.piece = self.fileinfo.handle.get_torrent_info().map_file(self.fileinfo.id, self.offset, 0)
-        else:
-            raise asyncio.CancelledError
 
-    async def stopProducing(self):
+        return data
+
+    async def _cleanup(self):
         """stop torrent download"""
-        if hasattr(self, 'fileObject') and not self.fileObject.closed:
+        if self.fileObject is not None and not self.fileObject.closed:
             await self.fileObject.close()
-        await super().stopProducing()
-
-    async def resumeProducing(self):
-        """continue torrent download iteration"""
-        self.log.debug("index %d %d", self.size, self.piece.piece)
-        if self.fileinfo.handle.have_piece(self.piece.piece):
-            await self._read_piece()
 
 
 class TorrentProducer(StaticTorrentProducer):
@@ -780,7 +768,7 @@ class TorrentStream:
     async def shutdown(self, app):
         self.log.info("shutdown done")
 
-    async def render_GET(self, request):
+    async def render_GET(self, request: web.Request):
         url = request.query.get('url', None)
         action = request.match_info.get('action')
         ret = None
@@ -845,7 +833,7 @@ class TorrentStream:
 
                 await resp.prepare(request)
 
-                streamer = TorrentStreamer(self, fileinfo, offset, size)
+                streamer = StaticTorrentProducer(self, fileinfo, offset, size)
 
                 try:
                     async for chunk in streamer:
