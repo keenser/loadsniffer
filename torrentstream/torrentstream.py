@@ -227,6 +227,192 @@ class SessionStatus(BaseModel):
     torrents: Dict[str, TorrentStatus] = {}
 
 
+class TorrentStreamer1:
+    """Ленивый стриминг через read_piece + alert, без лишнего буфера"""
+
+    def __init__(self, stream: 'TorrentStream', fileinfo: FileInfo,
+                 offset: int = 0, size: Optional[int] = None):
+        self.log = logging.getLogger('torrent.streamer')
+        self.stream = stream
+        self.fileinfo = fileinfo
+        self.offset = offset
+        self.size = size or fileinfo.info.size - offset
+        self.lastoffset = self.offset + self.size - 1
+
+        self.piecelength = None
+        self.current_piece = None
+        self.last_piece = None
+
+        self._data_future: Optional[asyncio.Future] = None   # ← вместо buffer
+
+    async def __aiter__(self) -> AsyncGenerator[bytes, None]:
+        ti = self.fileinfo.handle.get_torrent_info()
+        self.piecelength = ti.piece_length()
+        self.current_piece = ti.map_file(self.fileinfo.id, self.offset, 0)
+        self.last_piece = ti.map_file(self.fileinfo.id, self.lastoffset, 0)
+
+        self._set_low_priority_range()
+
+        self.fileinfo.handle.resume()
+
+        self.stream.add_alert_handler('read_piece', self._on_read_piece, self.fileinfo.handle)
+
+        try:
+            while self.offset <= self.lastoffset:
+                piece_idx = self.current_piece.piece
+                piece_start = self.current_piece.start
+
+                # Запрашиваем кусок
+                self._data_future = asyncio.Future()
+                self.fileinfo.handle.read_piece(piece_idx)          # ← запрос
+                self.fileinfo.handle.set_piece_deadline(piece_idx, 6000)
+                self.fileinfo.handle.piece_priority(piece_idx, TorrentStream.HIGHEST)
+
+                # Ждём данные из алерта
+                try:
+                    data = await asyncio.wait_for(self._data_future, timeout=15.0)
+                except asyncio.TimeoutError:
+                    self.log.warning("Timeout reading piece %d", piece_idx)
+                    continue
+                except asyncio.CancelledError:
+                    raise
+
+                # Вырезаем нужный диапазон из piece
+                chunk_start = piece_start
+                chunk_end = min(len(data), chunk_start + (self.lastoffset - self.offset + 1))
+                chunk = data[chunk_start:chunk_end]
+
+                if chunk:
+                    yield chunk
+                    self.offset += len(chunk)
+
+                # Переходим дальше
+                if self.offset <= self.lastoffset:
+                    self.current_piece = ti.map_file(self.fileinfo.id, self.offset, 0)
+
+        finally:
+            self.stream.remove_alert_handler('read_piece', self._on_read_piece, self.fileinfo.handle)
+            if self._data_future and not self._data_future.done():
+                self._data_future.cancel()
+
+    def _set_low_priority_range(self):
+        """Устанавливаем LOWEST приоритет всем pieces в запрашиваемом диапазоне"""
+        start_idx = self.current_piece.piece
+        end_idx = self.last_piece.piece
+
+        self.log.debug("Setting LOW priority for pieces %d to %d", start_idx, end_idx)
+
+        for i in range(start_idx, end_idx + 1):
+            self.fileinfo.handle.piece_priority(i, TorrentStream.LOW)   # или PAUSE, если хочешь ещё ниже
+
+    def _on_read_piece(self, alert):
+        """Простой обработчик — кладём данные в future"""
+        if self._data_future and not self._data_future.done():
+            self._data_future.set_result(bytes(alert.buffer))   # копируем
+        # Игнорируем алерты для других pieces
+
+
+class TorrentStreamer:
+    """Современный async generator для стриминга торрент-файлов"""
+
+    def __init__(self, stream: 'TorrentStream', fileinfo: FileInfo,
+                 offset: int = 0, size: Optional[int] = None):
+        self.log = logging.getLogger('torrent.streamer')
+        self.stream = stream
+        self.fileinfo = fileinfo
+        self.offset = offset
+        self.size = size or fileinfo.info.size - offset
+        self.lastoffset = self.offset + self.size - 1
+
+        self.fileObject = None
+        self.piecelength = None
+        self.current_piece = None
+        self.last_piece = None
+
+    async def __aiter__(self) -> AsyncGenerator[bytes, None]:
+        """Async generator — основной поток данных"""
+        try:
+            ti = self.fileinfo.handle.get_torrent_info()
+            self.piecelength = ti.piece_length()
+            self.current_piece = ti.map_file(self.fileinfo.id, self.offset, 0)
+            self.last_piece = ti.map_file(self.fileinfo.id, self.lastoffset, 0)
+
+            self.fileinfo.handle.resume()
+            self._set_priorities()
+
+            while self.offset <= self.lastoffset:
+                # Определяем, сколько читать
+                if self.current_piece.piece < self.last_piece.piece:
+                    readlen = self.piecelength - self.current_piece.start
+                else:
+                    readlen = self.lastoffset - self.offset + 1
+
+                # Ждём, пока кусок будет готов (с таймаутом)
+                if not self.fileinfo.handle.have_piece(self.current_piece.piece):
+                    await self._wait_for_piece(self.current_piece.piece)
+                    continue
+
+                if self.fileObject is None:
+                    path = os.path.join(self.fileinfo.handle.save_path(), self.fileinfo.info.path)
+                    self.fileObject = await aiofiles.open(path, 'rb')
+                    await self.fileObject.seek(self.offset)
+
+                data = await self.fileObject.read(readlen)
+                if not data:
+                    break
+
+                yield data
+
+                self.offset += len(data)
+
+                # Переходим к следующему piece
+                if self.offset <= self.lastoffset:
+                    self.current_piece = ti.map_file(self.fileinfo.id, self.offset, 0)
+
+                # Обновляем приоритеты каждые несколько pieces
+                self._set_priorities()
+
+        finally:
+            if self.fileObject and not self.fileObject.closed:
+                await self.fileObject.close()
+
+    def _set_priorities(self):
+        """Повышаем приоритет ближайших кусков"""
+        start = self.current_piece.piece
+        for i in range(12):  # окно приоритета ~12 pieces
+            piece_idx = start + i
+            if piece_idx <= self.last_piece.piece:
+                self.fileinfo.handle.piece_priority(piece_idx, TorrentStream.HIGHEST)
+                self.fileinfo.handle.set_piece_deadline(piece_idx, 5000)
+
+    async def _wait_for_piece(self, piece_idx: int, timeout: float = 8.0):
+        """Ждём появления piece с backpressure"""
+        try:
+            await asyncio.wait_for(
+                self._wait_for_piece_alert(piece_idx),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            self.log.warning("Timeout waiting for piece %d", piece_idx)
+            # Всё равно пробуем читать — libtorrent сам скачает
+
+    async def _wait_for_piece_alert(self, piece_idx: int):
+        """Ожидание алерта piece_finished"""
+        event = asyncio.Event()
+
+        def on_piece_finished(alert):
+            if alert.piece_index == piece_idx:
+                event.set()
+
+        handler_id = f"piece_{piece_idx}"
+        self.stream.add_alert_handler('piece_finished', on_piece_finished, self.fileinfo.handle)
+
+        try:
+            await event.wait()
+        finally:
+            self.stream.remove_alert_handler('piece_finished', on_piece_finished, self.fileinfo.handle)
+
+
 class FilesListUpdateAlert:
     """custom libtorrent alert called from TorrentStream"""
     _what = 'files_list_update_alert'
@@ -631,60 +817,48 @@ class TorrentStream:
             if action not in self._files_list:
                 ret = help()
             else:
-                fileForReading = self._files_list[action]
+                fileinfo = self._files_list[action]
                 mimetype = mimetypes.guess_type(action, strict=False)[0] or 'application/octet-stream'
-                filesize = fileForReading.info.size
+                filesize = fileinfo.info.size
 
                 ranges = request.http_range
                 offset = ranges.start or 0
                 stop = ranges.stop or filesize
-                rangestr = 'bytes {}-{}/{}'.format(offset, stop - 1, filesize)
                 size = stop - offset
+
                 status = 200 if ranges.start is None and ranges.stop is None else 206
+                rangestr = f'bytes {offset}-{stop-1}/{filesize}'
 
-                resume = asyncio.Event()
-
-                class StreamResponse(web.StreamResponse):
-                    async def write(self, data):
-                        self.resume()
-                        try:
-                            await super().write(data)
-                        except ConnectionError:
-                            pass
-
-                    @staticmethod
-                    def resume():
-                        if not resume.is_set():
-                            resume.set()
-
-                resp = StreamResponse(status=status,
-                                      headers={
-                                          'accept-ranges': 'bytes',
-                                          'Content-Type': mimetype,
-                                          'content-length': str(size),
-                                          'content-range': rangestr,
-                                          'Content-Disposition': 'inline; filename="{}"'.format(os.path.basename(action))}
-                                     )
-
+                resp = web.StreamResponse(
+                    status=status,
+                    headers={
+                        'Accept-Ranges': 'bytes',
+                        'Content-Type': mimetype,
+                        'Content-Length': str(size),
+                        'Content-Range': rangestr,
+                        'Content-Disposition': f'inline; filename="{os.path.basename(action)}"'
+                    }
+                )
+ 
                 if request.method == 'HEAD':
                     return resp
 
                 await resp.prepare(request)
-                producer = TorrentProducer(self, resp, fileForReading, offset, size)
+
+                streamer = TorrentStreamer(self, fileinfo, offset, size)
+
                 try:
-                    await producer.start()
-                    while True:
-                        resume.clear()
-                        await producer.resumeProducing()
-                        try:
-                            await asyncio.wait_for(resume.wait(), 5)
-                        except asyncio.TimeoutError:
-                            pass
-                except asyncio.CancelledError:
-                    """raise for stopProducing"""
-                    raise
-                finally:
-                    await producer.stopProducing()
+                    async for chunk in streamer:
+                        await resp.write(chunk)
+                        await resp.drain()                    # ← backpressure
+
+                        # Если drain() долго ждёт — мы автоматически не запрашиваем новые pieces
+                        # (это обеспечивается ленивым дизайном)
+
+                except (ConnectionError, ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+                    self.log.info("Client disconnected: %s", action)
+                except Exception as e:
+                    self.log.exception("Streaming error for %s", action)
 
                 return resp
 
