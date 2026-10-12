@@ -5,6 +5,7 @@
 """Websocket protocol for the web UI: a Hub (shared state) and one Connection per client."""
 
 from __future__ import annotations
+import asyncio
 import logging
 import json
 import os.path
@@ -16,6 +17,7 @@ import aiohttp
 import aiohttp.web
 from pydantic import BaseModel, ValidationError
 
+from mrc.devices import UPnPctrl
 import torrentstream
 
 from .extract import Info
@@ -63,7 +65,7 @@ class BtTorrentEntry(BaseModel):
 class Hub:
     """Shared state for every websocket connection: the upnp/torrent controllers, youtube-dl."""
 
-    def __init__(self, loop, upnp, torrent: torrentstream.TorrentStream):
+    def __init__(self, loop: asyncio.AbstractEventLoop, upnp: UPnPctrl, torrent: torrentstream.TorrentStream):
         self.log = logging.getLogger(self.__class__.__name__)
         self.loop = loop
         self.upnp = upnp

@@ -11,11 +11,11 @@ from typing import Awaitable, Callable, Dict, Optional, Tuple
 
 from async_upnp_client.aiohttp import AiohttpNotifyServer, AiohttpRequester
 from async_upnp_client.client_factory import UpnpFactory
-from async_upnp_client.const import SsdpSource
+from async_upnp_client.const import DeviceOrServiceType, SsdpSource
 from async_upnp_client.exceptions import UpnpError
 from async_upnp_client.profiles.dlna import DmrDevice
 from async_upnp_client.ssdp import SSDP_ST_ROOTDEVICE
-from async_upnp_client.ssdp_listener import SsdpListener
+from async_upnp_client.ssdp_listener import SsdpDevice, SsdpListener
 
 RESEARCH_INTERVAL = 120
 
@@ -39,7 +39,7 @@ class RendererRegistry:
                  on_device_removed: Optional[DeviceCallback] = None,
                  source: Optional[Tuple[str, int]] = None
                  ) -> None:
-        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.log = logging.getLogger(self.__class__.__name__)
         self.loop = loop or asyncio.get_event_loop()
         self._on_device_found = on_device_found
         self._on_device_removed = on_device_removed
@@ -99,7 +99,7 @@ class RendererRegistry:
             await self.async_search()
             await asyncio.sleep(RESEARCH_INTERVAL)
 
-    async def _on_ssdp(self, ssdp_device, device_or_service_type: str, source: SsdpSource) -> None:
+    async def _on_ssdp(self, ssdp_device: SsdpDevice, device_or_service_type: DeviceOrServiceType, source: SsdpSource) -> None:
         if device_or_service_type != SSDP_ST_ROOTDEVICE:
             return
 

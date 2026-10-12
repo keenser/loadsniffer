@@ -30,6 +30,8 @@ from async_upnp_client.server import (
     create_state_var,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 _ITEM_CLASS_BY_MAJOR_MIME = {
     'video': didl_lite.VideoItem,
     'audio': didl_lite.AudioItem,
@@ -68,7 +70,7 @@ class ContentDirectoryService(UpnpServerService):
     def add_subscriber(self, subscriber: EventSubscriber) -> None:
         """Log and register a subscription from a DLNA client (e.g. a TV)."""
         super().add_subscriber(subscriber)
-        logging.getLogger('aioupnp.mediaserver').info(
+        _LOGGER.info(
             'ContentDirectory: DLNA client subscribed to events '
             'callback=%s sid=%s timeout=%ss',
             subscriber.url,
@@ -80,7 +82,7 @@ class ContentDirectoryService(UpnpServerService):
         """Log and remove a subscription."""
         removed = super().del_subscriber(sid)
         if removed:
-            logging.getLogger('aioupnp.mediaserver').info(
+            _LOGGER.info(
                 'ContentDirectory: DLNA client unsubscribed from events sid=%s',
                 sid,
             )
@@ -96,7 +98,6 @@ class ContentDirectoryService(UpnpServerService):
         independently: a failure is logged and the dead subscription is dropped
         instead of breaking delivery to everyone else (like the TV).
         """
-        logger = logging.getLogger('aioupnp.mediaserver')
         if not subscriber:
             # EventSubscriber.expiration uses offset-naive datetime.now(), so
             # the comparison must use a naive timestamp too.
@@ -139,7 +140,7 @@ class ContentDirectoryService(UpnpServerService):
             if result is None:
                 continue
             if isinstance(result, UpnpConnectionError):
-                logger.warning(
+                _LOGGER.warning(
                     'ContentDirectory: dropping subscription to unreachable callback '
                     'callback=%s sid=%s err=%s',
                     sub.url,
@@ -148,7 +149,7 @@ class ContentDirectoryService(UpnpServerService):
                 )
                 self.del_subscriber(sub.uuid)
             else:
-                logger.error(
+                _LOGGER.error(
                     'ContentDirectory: failed to notify callback=%s sid=%s err=%s',
                     sub.url,
                     sub.uuid,
@@ -245,7 +246,7 @@ class ContentDirectoryService(UpnpServerService):
         )
         self.state_variable('ContainerUpdateIDs').value = container_update_ids
 
-        logging.getLogger('aioupnp.mediaserver').info(
+        _LOGGER.info(
             'ContentDirectory: content changed, SystemUpdateID=%s ContainerUpdateIDs=%s '
             'subscribers=%d',
             system_update_id,
@@ -379,7 +380,7 @@ class MediaServer:
         '0.0.0.0' (the default if left unset) would advertise an unreachable
         address to DLNA clients - pass the host's real LAN IP explicitly.
         """
-        self.log = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.log = logging.getLogger(self.__class__.__name__)
 
         udn = 'uuid:{}'.format(uuid.uuid5(uuid.NAMESPACE_DNS, 'loadsniffer-mediaserver-{}'.format(socket.gethostname())))
         device_info = DeviceInfo(

@@ -33,7 +33,7 @@ class Piece(NamedTuple):
 class DynamicTorrentProducer:
     """read data using read_piece + read_piece_alert"""
     def __init__(self, stream:TorrentStream, fileinfo:FileInfo, offset=0, size:Optional[int]=None):
-        self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
+        self.log = logging.getLogger(self.__class__.__name__)
         self.stream = stream
         self.fileinfo = fileinfo
         self.offset = offset
@@ -438,7 +438,7 @@ class TorrentStream:
     HIGHEST = 7
 
     def __init__(self, loop=None, **options:str):
-        self.log = logging.getLogger('{}.{}'.format('torrent', self.__class__.__name__))
+        self.log = logging.getLogger(self.__class__.__name__)
         self._alert_handlers = {}
         self._files_list = {}
         self.options = options
