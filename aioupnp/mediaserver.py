@@ -237,9 +237,9 @@ class ContentDirectoryService(UpnpServerService):
         # root "0") to the same value as SystemUpdateID.
         container_ids = ['0']
         for container in self._list_containers():
-            cid = container.get('id')
+            cid = container.id
             if cid is not None:
-                container_ids.append(str(cid))
+                container_ids.append(cid)
         container_update_ids = ','.join(
             '{},{}'.format(cid, system_update_id) for cid in container_ids
         )
